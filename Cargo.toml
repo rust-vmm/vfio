@@ -1,12 +1,19 @@
 [package]
-name = "crate-template"
+name = "vfio_user"
 version = "0.1.0"
-authors = ["TODO"]
-description = "This is a template for creating rust-vmm repositories."
-repository = "https://github.com/rust-vmm/crate-template"
-readme = "README.md"
-keywords = ["virt"]
-license = "Apache-2.0 OR BSD-3-Clause"
-edition = "2018"
+authors = ["The Cloud Hypervisor Authors"]
+edition = "2021"
+license = "Apache-2.0"
+description = "Support for vfio-user devices"
+repository = "https://github.com/rust-vmm/vfio-user"
 
 [dependencies]
+libc = "0.2.139"
+log = "0.4.17"
+serde = { version = "1.0.151", features = ["rc"] }
+serde_derive = "1.0.149"
+serde_json = "1.0.93"
+thiserror = "1.0.38"
+vfio-bindings = { git = "https://github.com/rust-vmm/vfio", branch = "main", features = ["fam-wrappers"] }
+vm-memory = { version = "0.10.0", features = ["backend-mmap", "backend-atomic"] }
+vmm-sys-util = "0.11.0"

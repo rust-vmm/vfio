@@ -1,3 +1,7 @@
+# [v0.3.1]
+
+- Update repository to https://github.com/rust-vmm/vfio
+
 # [v0.3.0]
 
 ## Added

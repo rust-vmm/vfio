@@ -9,6 +9,9 @@ readme = "README.md"
 edition = "2018"
 keywords = ["vfio"]
 
+[package.metadata.docs.rs]
+features = ["vfio-v5_0_0", "fam-wrappers"]
+
 [features]
 vfio-v5_0_0 = []
 fam-wrappers = ["vmm-sys-util"]

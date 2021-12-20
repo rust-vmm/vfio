@@ -15,7 +15,7 @@ features = ["kvm"]
 [features]
 default = ["kvm"]
 kvm = ["kvm-ioctls", "kvm-bindings"]
-#mshv = ["mshv-ioctls", "mshv-bindings"]
+mshv = ["mshv-ioctls", "mshv-bindings"]
 
 [dependencies]
 byteorder = ">=1.2.1"
@@ -27,5 +27,5 @@ thiserror = ">=1.0"
 vfio-bindings = "~0"
 vm-memory = { version = ">=0.6", features = ["backend-mmap"] }
 vmm-sys-util = ">=0.8.0"
-#mshv-bindings = { git = "https://github.com/rust-vmm/mshv", branch = "main", features = ["with-serde", "fam-wrappers"], optional  = true }
-#mshv-ioctls = { git = "https://github.com/rust-vmm/mshv", branch = "main", optional  = true }
+mshv-bindings = { git = "https://github.com/rust-vmm/mshv", branch = "main", features = ["with-serde", "fam-wrappers"], optional  = true }
+mshv-ioctls = { git = "https://github.com/rust-vmm/mshv", branch = "main", optional  = true }

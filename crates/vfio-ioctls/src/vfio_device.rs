@@ -23,6 +23,43 @@ use vmm_sys_util::eventfd::EventFd;
 use crate::fam::vec_with_array_field;
 use crate::vfio_ioctls::*;
 use crate::{Result, VfioError};
+#[cfg(all(feature = "kvm", not(test)))]
+use kvm_bindings::{
+    kvm_device_attr, KVM_DEV_VFIO_GROUP, KVM_DEV_VFIO_GROUP_ADD, KVM_DEV_VFIO_GROUP_DEL,
+};
+#[cfg(all(feature = "kvm", not(test)))]
+use kvm_ioctls::DeviceFd as KvmDeviceFd;
+#[cfg(all(feature = "mshv", target_arch = "x86_64", not(test)))]
+use mshv_bindings::{
+    mshv_device_attr, MSHV_DEV_VFIO_GROUP, MSHV_DEV_VFIO_GROUP_ADD, MSHV_DEV_VFIO_GROUP_DEL,
+};
+#[cfg(all(feature = "mshv", target_arch = "x86_64", not(test)))]
+use mshv_ioctls::DeviceFd as MshvDeviceFd;
+
+#[derive(Debug)]
+enum DeviceFdInner {
+    #[cfg(all(feature = "kvm", not(test)))]
+    Kvm(KvmDeviceFd),
+    #[cfg(all(feature = "mshv", target_arch = "x86_64", not(test)))]
+    Mshv(MshvDeviceFd),
+}
+
+#[derive(Debug)]
+/// A wrapper for a device fd from either KVM or MSHV.
+pub struct DeviceFd(DeviceFdInner);
+
+impl DeviceFd {
+    #[cfg(all(feature = "kvm", not(test)))]
+    pub fn new_from_kvm(fd: KvmDeviceFd) -> Self {
+        DeviceFd(DeviceFdInner::Kvm(fd))
+    }
+    #[cfg(all(feature = "mshv", target_arch = "x86_64", not(test)))]
+    pub fn new_from_mshv(fd: MshvDeviceFd) -> Self {
+        DeviceFd(DeviceFdInner::Mshv(fd))
+    }
+}
+
+pub type VfioContainerDeviceHandle = Arc<DeviceFd>;
 
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -57,8 +94,6 @@ impl vfio_region_info_with_cap {
         region_with_cap
     }
 }
-
-pub use self::hypervisor::VfioContainerDeviceHandle;
 
 /// A safe wrapper over a VFIO container object.
 ///
@@ -150,6 +185,7 @@ impl VfioContainer {
         }
 
         // Add the new group object to the hypervisor driver.
+        #[cfg(any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")))]
         if let Err(e) = self.device_add_group(&group) {
             let _ = vfio_syscall::unset_group_container(&*group, self);
             return Err(e);
@@ -170,6 +206,7 @@ impl VfioContainer {
         // - one reference cloned in VfioDevice.drop() and passed into here
         // - one reference held by the groups hashmap
         if Arc::strong_count(&group) == 3 {
+            #[cfg(any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")))]
             match self.device_del_group(&group) {
                 Ok(_) => {}
                 Err(e) => {
@@ -253,124 +290,95 @@ impl VfioContainer {
             self.vfio_dma_unmap(region.start_addr().raw_value(), region.len() as u64)
         })
     }
-}
 
-#[cfg(all(feature = "kvm", not(test)))]
-// Methods to support the KVM hypervisor.
-// Note: a special stub implementation is used for VFIO unit tests, so following code won't covered
-// by unit tests, be careful when review changes.
-mod hypervisor {
-    use super::*;
-    use kvm_bindings::{
-        kvm_device_attr, KVM_DEV_VFIO_GROUP, KVM_DEV_VFIO_GROUP_ADD, KVM_DEV_VFIO_GROUP_DEL,
-    };
-    use kvm_ioctls::DeviceFd;
+    /// Add a device to a VFIO group
+    ///
+    /// The VFIO device fd should have been set.
+    ///
+    /// # Parameters
+    /// * group: target VFIO group
+    #[cfg(all(
+        any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")),
+        not(test)
+    ))]
+    fn device_add_group(&self, group: &VfioGroup) -> Result<()> {
+        let group_fd_ptr = &group.as_raw_fd() as *const i32;
+        let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
 
-    /// Type for device file handle passed to VfioContainer::new();
-    pub type VfioContainerDeviceHandle = Arc<DeviceFd>;
-
-    impl VfioContainer {
-        pub(crate) fn device_add_group(&self, group: &VfioGroup) -> Result<()> {
-            let group_fd_ptr = &group.as_raw_fd() as *const i32;
-            let dev_attr = kvm_device_attr {
-                flags: 0,
-                group: KVM_DEV_VFIO_GROUP,
-                attr: u64::from(KVM_DEV_VFIO_GROUP_ADD),
-                addr: group_fd_ptr as u64,
-            };
-
-            let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
-
-            device_fd
-                .set_device_attr(&dev_attr)
-                .map_err(VfioError::SetDeviceAttr)
-        }
-
-        pub(crate) fn device_del_group(&self, group: &VfioGroup) -> Result<()> {
-            let group_fd_ptr = &group.as_raw_fd() as *const i32;
-            let dev_attr = kvm_device_attr {
-                flags: 0,
-                group: KVM_DEV_VFIO_GROUP,
-                attr: u64::from(KVM_DEV_VFIO_GROUP_DEL),
-                addr: group_fd_ptr as u64,
-            };
-
-            let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
-
-            device_fd
-                .set_device_attr(&dev_attr)
-                .map_err(VfioError::SetDeviceAttr)
+        match &device_fd.0 {
+            #[cfg(feature = "kvm")]
+            DeviceFdInner::Kvm(fd) => {
+                let dev_attr = kvm_device_attr {
+                    flags: 0,
+                    group: KVM_DEV_VFIO_GROUP,
+                    attr: u64::from(KVM_DEV_VFIO_GROUP_ADD),
+                    addr: group_fd_ptr as u64,
+                };
+                fd.set_device_attr(&dev_attr)
+                    .map_err(VfioError::SetDeviceAttr)
+            }
+            #[cfg(all(feature = "mshv", target_arch = "x86_64"))]
+            DeviceFdInner::Mshv(fd) => {
+                let dev_attr = mshv_device_attr {
+                    flags: 0,
+                    group: MSHV_DEV_VFIO_GROUP,
+                    attr: u64::from(MSHV_DEV_VFIO_GROUP_ADD),
+                    addr: group_fd_ptr as u64,
+                };
+                fd.set_device_attr(&dev_attr)
+                    .map_err(VfioError::SetDeviceAttr)
+            }
         }
     }
-}
 
-#[cfg(all(feature = "mshv", not(feature = "kvm"), not(test)))]
-// Methods to support the Microsoft HyperVisor.
-// Note: a special stub implementation is used for VFIO unit tests, so following code won't covered
-// by unit tests, be careful when review changes.
-mod hypervisor {
-    use super::*;
-    use mshv_bindings::{
-        mshv_device_attr, MSHV_DEV_VFIO_GROUP, MSHV_DEV_VFIO_GROUP_ADD, MSHV_DEV_VFIO_GROUP_DEL,
-    };
-    use mshv_ioctls::DeviceFd;
+    /// Delete a device from a VFIO group
+    ///
+    /// The VFIO device fd should have been set.
+    ///
+    /// # Parameters
+    /// * group: target VFIO group
+    #[cfg(all(
+        any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")),
+        not(test)
+    ))]
+    fn device_del_group(&self, group: &VfioGroup) -> Result<()> {
+        let group_fd_ptr = &group.as_raw_fd() as *const i32;
+        let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
 
-    /// Type for device file handle passed to VfioContainer::new();
-    pub type VfioContainerDeviceHandle = Arc<DeviceFd>;
-
-    impl VfioContainer {
-        pub(crate) fn device_add_group(&self, group: &VfioGroup) -> Result<()> {
-            let group_fd_ptr = &group.as_raw_fd() as *const i32;
-            let dev_attr = mshv_device_attr {
-                flags: 0,
-                group: MSHV_DEV_VFIO_GROUP,
-                attr: u64::from(MSHV_DEV_VFIO_GROUP_ADD),
-                addr: group_fd_ptr as u64,
-            };
-
-            let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
-
-            device_fd
-                .set_device_attr(&dev_attr)
-                .map_err(VfioError::SetDeviceAttr)
-        }
-
-        pub(crate) fn device_del_group(&self, group: &VfioGroup) -> Result<()> {
-            let group_fd_ptr = &group.as_raw_fd() as *const i32;
-            let dev_attr = mshv_device_attr {
-                flags: 0,
-                group: MSHV_DEV_VFIO_GROUP,
-                attr: u64::from(MSHV_DEV_VFIO_GROUP_DEL),
-                addr: group_fd_ptr as u64,
-            };
-
-            let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
-
-            device_fd
-                .set_device_attr(&dev_attr)
-                .map_err(VfioError::SetDeviceAttr)
+        match &device_fd.0 {
+            #[cfg(feature = "kvm")]
+            DeviceFdInner::Kvm(fd) => {
+                let dev_attr = kvm_device_attr {
+                    flags: 0,
+                    group: KVM_DEV_VFIO_GROUP,
+                    attr: u64::from(KVM_DEV_VFIO_GROUP_DEL),
+                    addr: group_fd_ptr as u64,
+                };
+                fd.set_device_attr(&dev_attr)
+                    .map_err(VfioError::SetDeviceAttr)
+            }
+            #[cfg(all(feature = "mshv", target_arch = "x86_64"))]
+            DeviceFdInner::Mshv(fd) => {
+                let dev_attr = mshv_device_attr {
+                    flags: 0,
+                    group: MSHV_DEV_VFIO_GROUP,
+                    attr: u64::from(MSHV_DEV_VFIO_GROUP_DEL),
+                    addr: group_fd_ptr as u64,
+                };
+                fd.set_device_attr(&dev_attr)
+                    .map_err(VfioError::SetDeviceAttr)
+            }
         }
     }
-}
 
-#[cfg(any(test, all(not(feature = "mshv"), not(feature = "kvm"))))]
-// Methods to support user mode driver, which has no associated hypervisors.
-// This implementation also acts a stub for VFIO unit tests to avoid dependency on platform
-// hardware configuration.
-mod hypervisor {
-    use super::*;
+    #[cfg(test)]
+    fn device_add_group(&self, _group: &VfioGroup) -> Result<()> {
+        Ok(())
+    }
 
-    /// Type for device file handle passed to VfioContainer::new();
-    pub type VfioContainerDeviceHandle = ();
-
-    impl VfioContainer {
-        pub(crate) fn device_add_group(&self, _group: &VfioGroup) -> Result<()> {
-            Ok(())
-        }
-
-        pub(crate) fn device_del_group(&self, _group: &VfioGroup) -> Result<()> {
-            Ok(())
-        }
+    #[cfg(test)]
+    fn device_del_group(&self, _group: &VfioGroup) -> Result<()> {
+        Ok(())
     }
 }
 

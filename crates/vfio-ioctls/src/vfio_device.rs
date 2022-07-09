@@ -73,7 +73,7 @@ pub use self::hypervisor::VfioContainerDeviceHandle;
 pub struct VfioContainer {
     pub(crate) container: File,
     #[allow(dead_code)]
-    pub(crate) device_fd: VfioContainerDeviceHandle,
+    pub(crate) device_fd: Option<VfioContainerDeviceHandle>,
     pub(crate) groups: Mutex<HashMap<u32, Arc<VfioGroup>>>,
 }
 
@@ -82,7 +82,7 @@ impl VfioContainer {
     ///
     /// # Arguments
     /// * `device_fd`: file handle of the VFIO device.
-    pub fn new(device_fd: VfioContainerDeviceHandle) -> Result<Self> {
+    pub fn new(device_fd: Option<VfioContainerDeviceHandle>) -> Result<Self> {
         let container = OpenOptions::new()
             .read(true)
             .write(true)
@@ -279,7 +279,9 @@ mod hypervisor {
                 addr: group_fd_ptr as u64,
             };
 
-            self.device_fd
+            let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
+
+            device_fd
                 .set_device_attr(&dev_attr)
                 .map_err(VfioError::SetDeviceAttr)
         }
@@ -293,7 +295,9 @@ mod hypervisor {
                 addr: group_fd_ptr as u64,
             };
 
-            self.device_fd
+            let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
+
+            device_fd
                 .set_device_attr(&dev_attr)
                 .map_err(VfioError::SetDeviceAttr)
         }
@@ -324,7 +328,9 @@ mod hypervisor {
                 addr: group_fd_ptr as u64,
             };
 
-            self.device_fd
+            let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
+
+            device_fd
                 .set_device_attr(&dev_attr)
                 .map_err(VfioError::SetDeviceAttr)
         }
@@ -338,7 +344,9 @@ mod hypervisor {
                 addr: group_fd_ptr as u64,
             };
 
-            self.device_fd
+            let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
+
+            device_fd
                 .set_device_attr(&dev_attr)
                 .map_err(VfioError::SetDeviceAttr)
         }
@@ -1189,7 +1197,7 @@ mod tests {
 
         VfioContainer {
             container,
-            device_fd: (),
+            device_fd: None,
             groups: Mutex::new(HashMap::new()),
         }
     }

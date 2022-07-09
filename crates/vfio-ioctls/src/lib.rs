@@ -123,6 +123,8 @@ pub enum VfioError {
     VfioDeviceUnmaskIrq,
     #[error("failed to trigger vfio device irq")]
     VfioDeviceTriggerIrq,
+    #[error("no associated device fd")]
+    VfioNoDeviceFd,
 }
 
 /// Specialized version of `Result` for VFIO subsystem.

@@ -983,14 +983,13 @@ impl VfioDevice {
     /// * `buf`: data destination and buf length is read size
     /// * `addr`: offset in the region
     pub fn region_read(&self, index: u32, buf: &mut [u8], addr: u64) {
-        let region: &VfioRegion;
-        match self.regions.get(index as usize) {
-            Some(v) => region = v,
+        let region: &VfioRegion = match self.regions.get(index as usize) {
+            Some(v) => v,
             None => {
                 warn!("region read with invalid index: {}", index);
                 return;
             }
-        }
+        };
 
         let size = buf.len() as u64;
         if size > region.size || addr + size > region.size {
@@ -1016,14 +1015,13 @@ impl VfioDevice {
     /// * `buf`: data src and buf length is write size
     /// * `addr`: offset in the region
     pub fn region_write(&self, index: u32, buf: &[u8], addr: u64) {
-        let stub: &VfioRegion;
-        match self.regions.get(index as usize) {
-            Some(v) => stub = v,
+        let stub: &VfioRegion = match self.regions.get(index as usize) {
+            Some(v) => v,
             None => {
                 warn!("region write with invalid index: {}", index);
                 return;
             }
-        }
+        };
 
         let size = buf.len() as u64;
         if size > stub.size

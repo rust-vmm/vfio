@@ -291,6 +291,50 @@ impl VfioContainer {
         })
     }
 
+    #[cfg(all(
+        any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")),
+        not(test)
+    ))]
+    fn device_set_group(&self, group: &VfioGroup, add: bool) -> Result<()> {
+        let group_fd_ptr = &group.as_raw_fd() as *const i32;
+        let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
+
+        match &device_fd.0 {
+            #[cfg(feature = "kvm")]
+            DeviceFdInner::Kvm(fd) => {
+                let flag = if add {
+                    KVM_DEV_VFIO_GROUP_ADD
+                } else {
+                    KVM_DEV_VFIO_GROUP_DEL
+                };
+                let dev_attr = kvm_device_attr {
+                    flags: 0,
+                    group: KVM_DEV_VFIO_GROUP,
+                    attr: u64::from(flag),
+                    addr: group_fd_ptr as u64,
+                };
+                fd.set_device_attr(&dev_attr)
+                    .map_err(VfioError::SetDeviceAttr)
+            }
+            #[cfg(all(feature = "mshv", target_arch = "x86_64"))]
+            DeviceFdInner::Mshv(fd) => {
+                let flag = if add {
+                    MSHV_DEV_VFIO_GROUP_ADD
+                } else {
+                    MSHV_DEV_VFIO_GROUP_DEL
+                };
+                let dev_attr = mshv_device_attr {
+                    flags: 0,
+                    group: MSHV_DEV_VFIO_GROUP,
+                    attr: u64::from(flag),
+                    addr: group_fd_ptr as u64,
+                };
+                fd.set_device_attr(&dev_attr)
+                    .map_err(VfioError::SetDeviceAttr)
+            }
+        }
+    }
+
     /// Add a device to a VFIO group
     ///
     /// The VFIO device fd should have been set.
@@ -302,33 +346,7 @@ impl VfioContainer {
         not(test)
     ))]
     fn device_add_group(&self, group: &VfioGroup) -> Result<()> {
-        let group_fd_ptr = &group.as_raw_fd() as *const i32;
-        let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
-
-        match &device_fd.0 {
-            #[cfg(feature = "kvm")]
-            DeviceFdInner::Kvm(fd) => {
-                let dev_attr = kvm_device_attr {
-                    flags: 0,
-                    group: KVM_DEV_VFIO_GROUP,
-                    attr: u64::from(KVM_DEV_VFIO_GROUP_ADD),
-                    addr: group_fd_ptr as u64,
-                };
-                fd.set_device_attr(&dev_attr)
-                    .map_err(VfioError::SetDeviceAttr)
-            }
-            #[cfg(all(feature = "mshv", target_arch = "x86_64"))]
-            DeviceFdInner::Mshv(fd) => {
-                let dev_attr = mshv_device_attr {
-                    flags: 0,
-                    group: MSHV_DEV_VFIO_GROUP,
-                    attr: u64::from(MSHV_DEV_VFIO_GROUP_ADD),
-                    addr: group_fd_ptr as u64,
-                };
-                fd.set_device_attr(&dev_attr)
-                    .map_err(VfioError::SetDeviceAttr)
-            }
-        }
+        self.device_set_group(group, true)
     }
 
     /// Delete a device from a VFIO group
@@ -342,33 +360,7 @@ impl VfioContainer {
         not(test)
     ))]
     fn device_del_group(&self, group: &VfioGroup) -> Result<()> {
-        let group_fd_ptr = &group.as_raw_fd() as *const i32;
-        let device_fd = self.device_fd.as_ref().ok_or(VfioError::VfioNoDeviceFd)?;
-
-        match &device_fd.0 {
-            #[cfg(feature = "kvm")]
-            DeviceFdInner::Kvm(fd) => {
-                let dev_attr = kvm_device_attr {
-                    flags: 0,
-                    group: KVM_DEV_VFIO_GROUP,
-                    attr: u64::from(KVM_DEV_VFIO_GROUP_DEL),
-                    addr: group_fd_ptr as u64,
-                };
-                fd.set_device_attr(&dev_attr)
-                    .map_err(VfioError::SetDeviceAttr)
-            }
-            #[cfg(all(feature = "mshv", target_arch = "x86_64"))]
-            DeviceFdInner::Mshv(fd) => {
-                let dev_attr = mshv_device_attr {
-                    flags: 0,
-                    group: MSHV_DEV_VFIO_GROUP,
-                    attr: u64::from(MSHV_DEV_VFIO_GROUP_DEL),
-                    addr: group_fd_ptr as u64,
-                };
-                fd.set_device_attr(&dev_attr)
-                    .map_err(VfioError::SetDeviceAttr)
-            }
-        }
+        self.device_set_group(group, false)
     }
 
     #[cfg(test)]

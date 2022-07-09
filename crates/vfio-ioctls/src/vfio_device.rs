@@ -73,7 +73,7 @@ pub use self::hypervisor::VfioContainerDeviceHandle;
 pub struct VfioContainer {
     pub(crate) container: File,
     #[allow(dead_code)]
-    pub(crate) device_fd: VfioContainerDeviceHandle,
+    pub(crate) device_fd: Option<VfioContainerDeviceHandle>,
     pub(crate) groups: Mutex<HashMap<u32, Arc<VfioGroup>>>,
 }
 
@@ -81,8 +81,8 @@ impl VfioContainer {
     /// Create a container wrapper object.
     ///
     /// # Arguments
-    /// * `device_fd`: file handle of the VFIO device.
-    pub fn new(device_fd: VfioContainerDeviceHandle) -> Result<Self> {
+    /// * `device_fd`: An optional file handle of the hypervisor VFIO device.
+    pub fn new(device_fd: Option<VfioContainerDeviceHandle>) -> Result<Self> {
         let container = OpenOptions::new()
             .read(true)
             .write(true)
@@ -279,9 +279,13 @@ mod hypervisor {
                 addr: group_fd_ptr as u64,
             };
 
-            self.device_fd
-                .set_device_attr(&dev_attr)
-                .map_err(VfioError::SetDeviceAttr)
+            if let Some(device_fd) = self.device_fd.as_ref() {
+                device_fd
+                    .set_device_attr(&dev_attr)
+                    .map_err(VfioError::SetDeviceAttr)
+            } else {
+                Ok(())
+            }
         }
 
         pub(crate) fn device_del_group(&self, group: &VfioGroup) -> Result<()> {
@@ -293,9 +297,13 @@ mod hypervisor {
                 addr: group_fd_ptr as u64,
             };
 
-            self.device_fd
-                .set_device_attr(&dev_attr)
-                .map_err(VfioError::SetDeviceAttr)
+            if let Some(device_fd) = self.device_fd.as_ref() {
+                device_fd
+                    .set_device_attr(&dev_attr)
+                    .map_err(VfioError::SetDeviceAttr)
+            } else {
+                Ok(())
+            }
         }
     }
 }
@@ -324,7 +332,13 @@ mod hypervisor {
                 addr: group_fd_ptr as u64,
             };
 
-            self.device_fd
+            if self.device_fd.is_none() {
+                return Ok(());
+            }
+
+            let device_fd = self.device_fd.as_ref().unwrap();
+
+            device_fd
                 .set_device_attr(&dev_attr)
                 .map_err(VfioError::SetDeviceAttr)
         }
@@ -337,10 +351,13 @@ mod hypervisor {
                 attr: u64::from(MSHV_DEV_VFIO_GROUP_DEL),
                 addr: group_fd_ptr as u64,
             };
-
-            self.device_fd
-                .set_device_attr(&dev_attr)
-                .map_err(VfioError::SetDeviceAttr)
+            if let Some(device_fd) = self.device_fd.as_ref() {
+                device_fd
+                    .set_device_attr(&dev_attr)
+                    .map_err(VfioError::SetDeviceAttr)
+            } else {
+                Ok(())
+            }
         }
     }
 }
@@ -1187,7 +1204,7 @@ mod tests {
 
         VfioContainer {
             container,
-            device_fd: (),
+            device_fd: None,
             groups: Mutex::new(HashMap::new()),
         }
     }

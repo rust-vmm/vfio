@@ -66,7 +66,7 @@ mod vfio_device;
 mod vfio_ioctls;
 
 pub use vfio_device::{
-    VfioContainer, VfioDevice, VfioGroup, VfioIrq, VfioRegion, VfioRegionInfoCap,
+    VfioContainer, VfioDevice, VfioDeviceFd, VfioGroup, VfioIrq, VfioRegion, VfioRegionInfoCap,
     VfioRegionInfoCapNvlink2Lnkspd, VfioRegionInfoCapNvlink2Ssatgt, VfioRegionInfoCapSparseMmap,
     VfioRegionInfoCapType, VfioRegionSparseMmapArea,
 };
@@ -123,6 +123,10 @@ pub enum VfioError {
     VfioDeviceUnmaskIrq,
     #[error("failed to trigger vfio device irq")]
     VfioDeviceTriggerIrq,
+    #[error("failed to duplicate fd")]
+    VfioDeviceDupFd,
+    #[error("wrong device fd type")]
+    VfioDeviceFdWrongType,
 }
 
 /// Specialized version of `Result` for VFIO subsystem.

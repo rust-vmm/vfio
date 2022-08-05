@@ -313,7 +313,7 @@ impl VfioContainer {
 
         vfio_syscall::unmap_dma(self, &mut dma_unmap)?;
         if dma_unmap.size != size {
-            return Err(VfioError::IommuDmaUnmap);
+            return Err(VfioError::InvalidDmaUnmapSize);
         }
 
         Ok(())
@@ -327,7 +327,7 @@ impl VfioContainer {
         mem.iter().try_for_each(|region| {
             let host_addr = region
                 .get_host_address(MemoryRegionAddress(0))
-                .map_err(|_| VfioError::IommuDmaMap)?;
+                .map_err(|_| VfioError::GetHostAddress)?;
             self.vfio_dma_map(
                 region.start_addr().raw_value(),
                 region.len() as u64,
@@ -1156,6 +1156,7 @@ impl Drop for VfioDevice {
 mod tests {
     use super::*;
     use std::mem::size_of;
+    use vm_memory::{GuestAddress, GuestMemoryMmap};
     use vmm_sys_util::tempfile::TempFile;
 
     impl VfioGroup {
@@ -1419,5 +1420,26 @@ mod tests {
         assert_ne!(v8, v2.clone());
         assert_ne!(v8, v4.clone());
         assert_ne!(v8, v6.clone());
+    }
+
+    #[test]
+    fn test_vfio_map_guest_memory() {
+        let addr1 = GuestAddress(0x1000);
+        let mem1 = GuestMemoryMmap::<()>::from_ranges(&[(addr1, 0x1000)]).unwrap();
+        let container = create_vfio_container();
+
+        container.vfio_map_guest_memory(&mem1).unwrap();
+
+        let addr2 = GuestAddress(0x3000);
+        let mem2 = GuestMemoryMmap::<()>::from_ranges(&[(addr2, 0x1000)]).unwrap();
+
+        container.vfio_unmap_guest_memory(&mem2).unwrap_err();
+
+        let addr3 = GuestAddress(0x1000);
+        let mem3 = GuestMemoryMmap::<()>::from_ranges(&[(addr3, 0x2000)]).unwrap();
+
+        container.vfio_unmap_guest_memory(&mem3).unwrap_err();
+
+        container.vfio_unmap_guest_memory(&mem1).unwrap();
     }
 }

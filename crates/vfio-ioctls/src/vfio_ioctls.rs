@@ -89,7 +89,7 @@ pub(crate) mod vfio_syscall {
         // we check the return value
         let ret = unsafe { ioctl_with_ref(container, VFIO_IOMMU_MAP_DMA(), dma_map) };
         if ret != 0 {
-            Err(VfioError::IommuDmaMap)
+            Err(VfioError::IommuDmaMap(SysError::last()))
         } else {
             Ok(())
         }
@@ -103,7 +103,7 @@ pub(crate) mod vfio_syscall {
         // we check the return value
         let ret = unsafe { ioctl_with_ref(container, VFIO_IOMMU_UNMAP_DMA(), dma_map) };
         if ret != 0 {
-            Err(VfioError::IommuDmaUnmap)
+            Err(VfioError::IommuDmaUnmap(SysError::last()))
         } else {
             Ok(())
         }
@@ -273,7 +273,7 @@ pub(crate) mod vfio_syscall {
         if dma_map.iova == 0x1000 {
             Ok(())
         } else {
-            Err(VfioError::IommuDmaMap)
+            Err(VfioError::IommuDmaMap(SysError::last()))
         }
     }
 
@@ -282,9 +282,12 @@ pub(crate) mod vfio_syscall {
         dma_map: &mut vfio_iommu_type1_dma_unmap,
     ) -> Result<()> {
         if dma_map.iova == 0x1000 {
+            if dma_map.size == 0x2000 {
+                dma_map.size = 0x1000;
+            }
             Ok(())
         } else {
-            Err(VfioError::IommuDmaUnmap)
+            Err(VfioError::IommuDmaUnmap(SysError::last()))
         }
     }
 

@@ -516,7 +516,7 @@ impl AsRawFd for VfioGroup {
 }
 
 /// Represent one area of the sparse mmap
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct VfioRegionSparseMmapArea {
     /// Offset of mmap'able area within region
     pub offset: u64,
@@ -525,14 +525,14 @@ pub struct VfioRegionSparseMmapArea {
 }
 
 /// List of sparse mmap areas
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VfioRegionInfoCapSparseMmap {
     /// List of areas
     pub areas: Vec<VfioRegionSparseMmapArea>,
 }
 
 /// Represent a specific device by providing type and subtype
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct VfioRegionInfoCapType {
     /// Device type
     pub type_: u32,
@@ -541,21 +541,21 @@ pub struct VfioRegionInfoCapType {
 }
 
 /// Carry NVLink SSA TGT information
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct VfioRegionInfoCapNvlink2Ssatgt {
     /// TGT value
     pub tgt: u64,
 }
 
 /// Carry NVLink link speed information
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct VfioRegionInfoCapNvlink2Lnkspd {
     /// Link speed value
     pub link_speed: u32,
 }
 
 /// List of capabilities that can be related to a region.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VfioRegionInfoCap {
     /// Sparse memory mapping type
     SparseMmap(VfioRegionInfoCapSparseMmap),
@@ -579,7 +579,7 @@ pub struct VfioRegion {
 }
 
 /// Information about VFIO interrupts.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct VfioIrq {
     /// Flags for irq.
     pub flags: u32,

@@ -232,12 +232,12 @@ impl VfioContainer {
         let group = Arc::new(VfioGroup::new(group_id)?);
 
         // Bind the new group object to the container.
-        vfio_syscall::set_group_container(&*group, self)?;
+        vfio_syscall::set_group_container(&group, self)?;
 
         // Initialize the IOMMU backend driver after binding the first group object.
         if hash.len() == 0 {
             if let Err(e) = self.set_iommu(VFIO_TYPE1v2_IOMMU) {
-                let _ = vfio_syscall::unset_group_container(&*group, self);
+                let _ = vfio_syscall::unset_group_container(&group, self);
                 return Err(e);
             }
         }
@@ -245,7 +245,7 @@ impl VfioContainer {
         // Add the new group object to the hypervisor driver.
         #[cfg(any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")))]
         if let Err(e) = self.device_add_group(&group) {
-            let _ = vfio_syscall::unset_group_container(&*group, self);
+            let _ = vfio_syscall::unset_group_container(&group, self);
             return Err(e);
         }
 
@@ -272,7 +272,7 @@ impl VfioContainer {
                     return;
                 }
             }
-            if vfio_syscall::unset_group_container(&*group, self).is_err() {
+            if vfio_syscall::unset_group_container(&group, self).is_err() {
                 error!("Could not unbind VFIO group: {:?}", group.id());
                 return;
             }

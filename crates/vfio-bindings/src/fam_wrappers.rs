@@ -89,6 +89,7 @@ mod tests {
         irq_set_vec[0].start = 0;
         irq_set_vec[0].count = event_fds.len() as u32;
 
+        // SAFETY: irq_set_vec is a valid flexible array constructed by us.
         let fds_vec = unsafe {
             irq_set_vec[0]
                 .data

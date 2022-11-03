@@ -670,17 +670,21 @@ impl VfioDeviceInfo {
             let info_ptr = &region_with_cap[0] as *const vfio_region_info_with_cap as *const u8;
 
             while next_cap_offset >= region_info_size {
+                // SAFETY: data structure returned by kernel is trusted.
                 let cap_header = unsafe {
                     *(info_ptr.offset(next_cap_offset as isize) as *const vfio_info_cap_header)
                 };
 
                 match u32::from(cap_header.id) {
                     VFIO_REGION_INFO_CAP_SPARSE_MMAP => {
+                        // SAFETY: data structure returned by kernel is trusted.
                         let sparse_mmap = unsafe {
                             info_ptr.offset(next_cap_offset as isize)
                                 as *const vfio_region_info_cap_sparse_mmap
                         };
+                        // SAFETY: data structure returned by kernel is trusted.
                         let nr_areas = unsafe { (*sparse_mmap).nr_areas };
+                        // SAFETY: data structure returned by kernel is trusted.
                         let areas = unsafe { (*sparse_mmap).areas.as_slice(nr_areas as usize) };
 
                         let cap = VfioRegionInfoCapSparseMmap {
@@ -695,6 +699,7 @@ impl VfioDeviceInfo {
                         region.caps.push(VfioRegionInfoCap::SparseMmap(cap));
                     }
                     VFIO_REGION_INFO_CAP_TYPE => {
+                        // SAFETY: data structure returned by kernel is trusted.
                         let type_ = unsafe {
                             *(info_ptr.offset(next_cap_offset as isize)
                                 as *const vfio_region_info_cap_type)
@@ -709,6 +714,7 @@ impl VfioDeviceInfo {
                         region.caps.push(VfioRegionInfoCap::MsixMappable);
                     }
                     VFIO_REGION_INFO_CAP_NVLINK2_SSATGT => {
+                        // SAFETY: data structure returned by kernel is trusted.
                         let nvlink2_ssatgt = unsafe {
                             *(info_ptr.offset(next_cap_offset as isize)
                                 as *const vfio_region_info_cap_nvlink2_ssatgt)
@@ -719,6 +725,7 @@ impl VfioDeviceInfo {
                         region.caps.push(VfioRegionInfoCap::Nvlink2Ssatgt(cap));
                     }
                     VFIO_REGION_INFO_CAP_NVLINK2_LNKSPD => {
+                        // SAFETY: data structure returned by kernel is trusted.
                         let nvlink2_lnkspd = unsafe {
                             *(info_ptr.offset(next_cap_offset as isize)
                                 as *const vfio_region_info_cap_nvlink2_lnkspd)
@@ -905,7 +912,7 @@ impl VfioDevice {
             // irq_set.data could be none, bool or fd according to flags, so irq_set.data
             // is u8 default, here irq_set.data is a vector of fds as u32, so 4 default u8
             // are combined together as u32 for each fd.
-            // It is safe as enough space is reserved through
+            // SAFETY: It is safe as enough space is reserved through
             // vec_with_array_field(u32)<event_fds.len()>.
             let fds = unsafe {
                 irq_set[0]
@@ -1141,10 +1148,11 @@ impl AsRawFd for VfioDevice {
 
 impl Drop for VfioDevice {
     fn drop(&mut self) {
-        // Safe because we own the File object.
         // ManuallyDrop is needed here because we need to ensure that VfioDevice::device is closed
         // before dropping VfioDevice::group, otherwise it will cause EBUSY when putting the
         // group object.
+
+        // SAFETY: we own the File object.
         unsafe {
             ManuallyDrop::drop(&mut self.device);
         }

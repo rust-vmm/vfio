@@ -57,12 +57,12 @@ pub(crate) mod vfio_syscall {
     };
 
     pub(crate) fn check_api_version(container: &VfioContainer) -> i32 {
-        // Safe as file is vfio container fd and ioctl is defined by kernel.
+        // SAFETY: file is vfio container fd and ioctl is defined by kernel.
         unsafe { ioctl(container, VFIO_GET_API_VERSION()) }
     }
 
     pub(crate) fn check_extension(container: &VfioContainer, val: u32) -> Result<u32> {
-        // Safe as file is vfio container and make sure val is valid.
+        // SAFETY: file is vfio container and make sure val is valid.
         let ret = unsafe { ioctl_with_val(container, VFIO_CHECK_EXTENSION(), val.into()) };
         if ret < 0 {
             Err(VfioError::VfioExtension)
@@ -72,7 +72,7 @@ pub(crate) mod vfio_syscall {
     }
 
     pub(crate) fn set_iommu(container: &VfioContainer, val: u32) -> Result<()> {
-        // Safe as file is vfio container and make sure val is valid.
+        // SAFETY: file is vfio container and make sure val is valid.
         let ret = unsafe { ioctl_with_val(container, VFIO_SET_IOMMU(), val.into()) };
         if ret < 0 {
             Err(VfioError::ContainerSetIOMMU)
@@ -85,7 +85,7 @@ pub(crate) mod vfio_syscall {
         container: &VfioContainer,
         dma_map: &vfio_iommu_type1_dma_map,
     ) -> Result<()> {
-        // Safe as file is vfio container, dma_map is constructed by us, and
+        // SAFETY: file is vfio container, dma_map is constructed by us, and
         // we check the return value
         let ret = unsafe { ioctl_with_ref(container, VFIO_IOMMU_MAP_DMA(), dma_map) };
         if ret != 0 {
@@ -99,7 +99,7 @@ pub(crate) mod vfio_syscall {
         container: &VfioContainer,
         dma_map: &mut vfio_iommu_type1_dma_unmap,
     ) -> Result<()> {
-        // Safe as file is vfio container, dma_unmap is constructed by us, and
+        // SAFETY: file is vfio container, dma_unmap is constructed by us, and
         // we check the return value
         let ret = unsafe { ioctl_with_ref(container, VFIO_IOMMU_UNMAP_DMA(), dma_map) };
         if ret != 0 {
@@ -113,7 +113,7 @@ pub(crate) mod vfio_syscall {
         file: &File,
         group_status: &mut vfio_group_status,
     ) -> Result<()> {
-        // Safe as we are the owner of group and group_status which are valid value.
+        // SAFETY: we are the owner of group and group_status which are valid value.
         let ret = unsafe { ioctl_with_mut_ref(file, VFIO_GROUP_GET_STATUS(), group_status) };
         if ret < 0 {
             Err(VfioError::GetGroupStatus)
@@ -123,19 +123,19 @@ pub(crate) mod vfio_syscall {
     }
 
     pub(crate) fn get_group_device_fd(group: &VfioGroup, path: &CStr) -> Result<File> {
-        // Safe as we are the owner of self and path_ptr which are valid value.
+        // SAFETY: we are the owner of self and path_ptr which are valid value.
         let fd = unsafe { ioctl_with_ptr(group, VFIO_GROUP_GET_DEVICE_FD(), path.as_ptr()) };
         if fd < 0 {
             Err(VfioError::GroupGetDeviceFD)
         } else {
-            // Safe as fd is valid FD
+            // SAFETY: fd is valid FD
             Ok(unsafe { File::from_raw_fd(fd) })
         }
     }
 
     pub(crate) fn set_group_container(group: &VfioGroup, container: &VfioContainer) -> Result<()> {
         let container_raw_fd = container.as_raw_fd();
-        // Safe as we are the owner of group and container_raw_fd which are valid value,
+        // SAFETY: we are the owner of group and container_raw_fd which are valid value,
         // and we verify the ret value
         let ret = unsafe { ioctl_with_ref(group, VFIO_GROUP_SET_CONTAINER(), &container_raw_fd) };
         if ret < 0 {
@@ -150,7 +150,7 @@ pub(crate) mod vfio_syscall {
         container: &VfioContainer,
     ) -> Result<()> {
         let container_raw_fd = container.as_raw_fd();
-        // Safe as we are the owner of self and container_raw_fd which are valid value.
+        // SAFETY: we are the owner of self and container_raw_fd which are valid value.
         let ret = unsafe { ioctl_with_ref(group, VFIO_GROUP_UNSET_CONTAINER(), &container_raw_fd) };
         if ret < 0 {
             Err(VfioError::GroupSetContainer)
@@ -160,7 +160,7 @@ pub(crate) mod vfio_syscall {
     }
 
     pub(crate) fn get_device_info(file: &File, dev_info: &mut vfio_device_info) -> Result<()> {
-        // Safe as we are the owner of dev and dev_info which are valid value,
+        // SAFETY: we are the owner of dev and dev_info which are valid value,
         // and we verify the return value.
         let ret = unsafe { ioctl_with_mut_ref(file, VFIO_DEVICE_GET_INFO(), dev_info) };
         if ret < 0 {
@@ -176,7 +176,7 @@ pub(crate) mod vfio_syscall {
         {
             Err(VfioError::VfioDeviceSetIrq)
         } else {
-            // Safe as we are the owner of self and irq_set which are valid value
+            // SAFETY: we are the owner of self and irq_set which are valid value
             let ret = unsafe { ioctl_with_ref(device, VFIO_DEVICE_SET_IRQS(), &irq_set[0]) };
             if ret < 0 {
                 Err(VfioError::VfioDeviceSetIrq)
@@ -187,7 +187,7 @@ pub(crate) mod vfio_syscall {
     }
 
     pub(crate) fn reset(device: &VfioDevice) -> i32 {
-        // Safe as file is vfio device
+        // SAFETY: file is vfio device
         unsafe { ioctl(device, VFIO_DEVICE_RESET()) }
     }
 
@@ -195,7 +195,7 @@ pub(crate) mod vfio_syscall {
         dev_info: &VfioDeviceInfo,
         irq_info: &mut vfio_irq_info,
     ) -> Result<()> {
-        // Safe as we are the owner of dev and irq_info which are valid value
+        // SAFETY: we are the owner of dev and irq_info which are valid value
         let ret = unsafe { ioctl_with_mut_ref(dev_info, VFIO_DEVICE_GET_IRQ_INFO(), irq_info) };
         if ret < 0 {
             Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(-ret)))
@@ -208,7 +208,7 @@ pub(crate) mod vfio_syscall {
         dev_info: &VfioDeviceInfo,
         reg_info: &mut vfio_region_info,
     ) -> Result<()> {
-        // Safe as we are the owner of dev and region_info which are valid value
+        // SAFETY: we are the owner of dev and region_info which are valid value
         // and we verify the return value.
         let ret = unsafe { ioctl_with_mut_ref(dev_info, VFIO_DEVICE_GET_REGION_INFO(), reg_info) };
         if ret < 0 {
@@ -230,7 +230,7 @@ pub(crate) mod vfio_syscall {
                 libc::EINVAL,
             )))
         } else {
-            // Safe as we are the owner of dev and region_info which are valid value,
+            // SAFETY: we are the owner of dev and region_info which are valid value,
             // and we verify the return value.
             let ret = unsafe {
                 ioctl_with_mut_ref(dev_info, VFIO_DEVICE_GET_REGION_INFO(), &mut reg_infos[0])
@@ -414,6 +414,7 @@ pub(crate) mod vfio_syscall {
         match reg_info.region_info.index {
             1 => {
                 reg_info.region_info.cap_offset = 32;
+                // SAFETY: data structure returned by kernel is trusted.
                 let header = unsafe {
                     &mut *((reg_info as *mut vfio_region_info_with_cap as *mut u8).add(32)
                         as *mut vfio_info_cap_header)
@@ -421,6 +422,7 @@ pub(crate) mod vfio_syscall {
                 header.id = VFIO_REGION_INFO_CAP_MSIX_MAPPABLE as u16;
                 header.next = 40;
 
+                // SAFETY: data structure returned by kernel is trusted.
                 let header = unsafe {
                     &mut *((header as *mut vfio_info_cap_header as *mut u8).add(8)
                         as *mut vfio_region_info_cap_type)
@@ -430,6 +432,7 @@ pub(crate) mod vfio_syscall {
                 header.type_ = 0x5;
                 header.subtype = 0x6;
 
+                // SAFETY: data structure returned by kernel is trusted.
                 let header = unsafe {
                     &mut *((header as *mut vfio_region_info_cap_type as *mut u8).add(16)
                         as *mut vfio_region_info_cap_sparse_mmap)
@@ -438,6 +441,7 @@ pub(crate) mod vfio_syscall {
                 header.header.next = 4;
                 header.nr_areas = 1;
 
+                // SAFETY: data structure returned by kernel is trusted.
                 let mmap = unsafe {
                     &mut *((header as *mut vfio_region_info_cap_sparse_mmap as *mut u8).add(16)
                         as *mut vfio_region_sparse_mmap_area)

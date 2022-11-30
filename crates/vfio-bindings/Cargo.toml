@@ -1,6 +1,6 @@
 [package]
 name = "vfio-bindings"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["The Cloud Hypervisor Authors"]
 license = "Apache-2.0 OR BSD-3-Clause"
 description = "Rust FFI bindings to vfio generated using bindgen."
@@ -17,7 +17,7 @@ vfio-v5_0_0 = []
 fam-wrappers = ["vmm-sys-util"]
 
 [dependencies]
-vmm-sys-util = { version = ">=0.8.0", optional = true }
+vmm-sys-util = { version = "0.11.0", optional = true }
 
 [dev-dependencies]
-byteorder = ">=1.2.1"
+byteorder = "1.2.1"

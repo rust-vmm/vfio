@@ -95,14 +95,14 @@ pub enum VfioError {
     GroupSetContainer,
     #[error("failed to unset vfio container")]
     UnsetContainer,
-    #[error("failed to set container's IOMMU driver type as VfioType1V2")]
-    ContainerSetIOMMU,
-    #[error("failed to get vfio device fd")]
-    GroupGetDeviceFD,
+    #[error("failed to set container's IOMMU driver type as VfioType1V2: {0}")]
+    ContainerSetIOMMU(#[source] SysError),
+    #[error("failed to get vfio device fd: {0}")]
+    GroupGetDeviceFD(#[source] SysError),
     #[error("failed to set vfio device's attribute: {0}")]
     SetDeviceAttr(#[source] SysError),
-    #[error("failed to get vfio device's info or info doesn't match")]
-    VfioDeviceGetInfo,
+    #[error("failed to get vfio device's info or info doesn't match: {0}")]
+    VfioDeviceGetInfo(#[source] SysError),
     #[error("failed to get vfio device's region info: {0}")]
     VfioDeviceGetRegionInfo(#[source] SysError),
     #[error("invalid file path")]

@@ -485,6 +485,22 @@ impl VfioGroup {
         self.id
     }
 
+    #[inline]
+    /// Get device type from device_info flags.
+    ///
+    /// # Parameters
+    /// * `flags`: flags field in device_info structure.
+    fn get_device_type(flags: &u32) -> u32 {
+        // There may be more types of device here later according to vfio_bindings.
+        let device_type: u32 = VFIO_DEVICE_FLAGS_PCI
+            | VFIO_DEVICE_FLAGS_PLATFORM
+            | VFIO_DEVICE_FLAGS_AMBA
+            | VFIO_DEVICE_FLAGS_CCW
+            | VFIO_DEVICE_FLAGS_AP;
+
+        flags & device_type
+    }
+
     fn get_device(&self, name: &Path) -> Result<VfioDeviceInfo> {
         let uuid_osstr = name.file_name().ok_or(VfioError::InvalidPath)?;
         let uuid_str = uuid_osstr.to_str().ok_or(VfioError::InvalidPath)?;
@@ -498,11 +514,18 @@ impl VfioGroup {
             num_irqs: 0,
         };
         vfio_syscall::get_device_info(&device, &mut dev_info)?;
-        if (dev_info.flags & VFIO_DEVICE_FLAGS_PCI) == 0
-            || dev_info.num_regions < VFIO_PCI_CONFIG_REGION_INDEX + 1
-            || dev_info.num_irqs < VFIO_PCI_MSIX_IRQ_INDEX + 1
-        {
-            return Err(VfioError::VfioDeviceGetInfo(SysError::last()));
+        match VfioGroup::get_device_type(&dev_info.flags) {
+            VFIO_DEVICE_FLAGS_PLATFORM => {}
+            VFIO_DEVICE_FLAGS_PCI => {
+                if dev_info.num_regions < VFIO_PCI_CONFIG_REGION_INDEX + 1
+                    || dev_info.num_irqs < VFIO_PCI_MSIX_IRQ_INDEX + 1
+                {
+                    return Err(VfioError::VfioDeviceGetInfo(SysError::last()));
+                }
+            }
+            _ => {
+                return Err(VfioError::VfioDeviceGetInfo(SysError::last()));
+            }
         }
 
         Ok(VfioDeviceInfo::new(device, &dev_info))

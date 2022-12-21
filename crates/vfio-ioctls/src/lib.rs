@@ -101,8 +101,12 @@ pub enum VfioError {
     GroupGetDeviceFD(#[source] SysError),
     #[error("failed to set vfio device's attribute: {0}")]
     SetDeviceAttr(#[source] SysError),
-    #[error("failed to get vfio device's info or info doesn't match: {0}")]
+    #[error("failed to get vfio device's info: {0}")]
     VfioDeviceGetInfo(#[source] SysError),
+    #[error("vfio PCI device info doesn't match")]
+    VfioDeviceGetInfoPCI,
+    #[error("unsupported vfio device type")]
+    VfioDeviceGetInfoOther,
     #[error("failed to get vfio device's region info: {0}")]
     VfioDeviceGetRegionInfo(#[source] SysError),
     #[error("invalid file path")]

@@ -75,7 +75,7 @@ pub(crate) mod vfio_syscall {
         // SAFETY: file is vfio container and make sure val is valid.
         let ret = unsafe { ioctl_with_val(container, VFIO_SET_IOMMU(), val.into()) };
         if ret < 0 {
-            Err(VfioError::ContainerSetIOMMU)
+            Err(VfioError::ContainerSetIOMMU(SysError::last()))
         } else {
             Ok(())
         }
@@ -126,7 +126,7 @@ pub(crate) mod vfio_syscall {
         // SAFETY: we are the owner of self and path_ptr which are valid value.
         let fd = unsafe { ioctl_with_ptr(group, VFIO_GROUP_GET_DEVICE_FD(), path.as_ptr()) };
         if fd < 0 {
-            Err(VfioError::GroupGetDeviceFD)
+            Err(VfioError::GroupGetDeviceFD(SysError::last()))
         } else {
             // SAFETY: fd is valid FD
             Ok(unsafe { File::from_raw_fd(fd) })
@@ -164,7 +164,7 @@ pub(crate) mod vfio_syscall {
         // and we verify the return value.
         let ret = unsafe { ioctl_with_mut_ref(file, VFIO_DEVICE_GET_INFO(), dev_info) };
         if ret < 0 {
-            Err(VfioError::VfioDeviceGetInfo)
+            Err(VfioError::VfioDeviceGetInfo(SysError::last()))
         } else {
             Ok(())
         }

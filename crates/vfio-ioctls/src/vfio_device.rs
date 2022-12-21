@@ -18,7 +18,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use log::{debug, error, warn};
 use vfio_bindings::bindings::vfio::*;
 use vm_memory::{Address, GuestMemory, GuestMemoryRegion, MemoryRegionAddress};
-use vmm_sys_util::eventfd::EventFd;
+use vmm_sys_util::{errno::Error as SysError, eventfd::EventFd};
 
 use crate::fam::vec_with_array_field;
 use crate::vfio_ioctls::*;
@@ -502,7 +502,7 @@ impl VfioGroup {
             || dev_info.num_regions < VFIO_PCI_CONFIG_REGION_INDEX + 1
             || dev_info.num_irqs < VFIO_PCI_MSIX_IRQ_INDEX + 1
         {
-            return Err(VfioError::VfioDeviceGetInfo);
+            return Err(VfioError::VfioDeviceGetInfo(SysError::last()));
         }
 
         Ok(VfioDeviceInfo::new(device, &dev_info))

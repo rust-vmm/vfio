@@ -1473,4 +1473,22 @@ mod tests {
 
         container.vfio_unmap_guest_memory(&mem1).unwrap();
     }
+
+    #[test]
+    fn test_get_device_type() {
+        let flags: u32 = VFIO_DEVICE_FLAGS_PCI;
+        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+
+        let flags: u32 = VFIO_DEVICE_FLAGS_PLATFORM;
+        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+
+        let flags: u32 = VFIO_DEVICE_FLAGS_AMBA;
+        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+
+        let flags: u32 = VFIO_DEVICE_FLAGS_CCW;
+        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+
+        let flags: u32 = VFIO_DEVICE_FLAGS_AP;
+        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+    }
 }

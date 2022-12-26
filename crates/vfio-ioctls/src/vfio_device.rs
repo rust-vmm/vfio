@@ -930,6 +930,56 @@ impl VfioDevice {
             .map_err(|_| VfioError::VfioDeviceEnableIrq)
     }
 
+    /// Sets a VFIO irq's resample fd.
+    /// This allows to set the signaling for an ACTION_UNMASK action. Once the resample fd
+    /// is set, vfio can auto-unmask the INTX interrupt when the resamplefd is triggered.
+    ///
+    /// # Arguments
+    /// * `irq_index` - INTX (the only type support to set resample fd)
+    /// * `event_rfds` - The resample EventFds will be set to vfio.
+    pub fn set_irq_resample_fd(&self, irq_index: u32, event_rfds: Vec<&EventFd>) -> Result<()> {
+        let irq = self
+            .irqs
+            .get(&irq_index)
+            .ok_or(VfioError::VfioDeviceSetIrqResampleFd)?;
+        // Currently the VFIO driver only support MASK/UNMASK INTX, so count is hard-coded to 1.
+        if irq.count != 1
+            || (irq.count as usize) < event_rfds.len()
+            || irq.index != VFIO_PCI_INTX_IRQ_INDEX
+        {
+            return Err(VfioError::VfioDeviceSetIrqResampleFd);
+        }
+
+        let mut irq_set = vec_with_array_field::<vfio_irq_set, u32>(event_rfds.len());
+        irq_set[0].argsz = mem::size_of::<vfio_irq_set>() as u32
+            + (event_rfds.len() * mem::size_of::<u32>()) as u32;
+        irq_set[0].flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_UNMASK;
+        irq_set[0].index = irq_index;
+        irq_set[0].start = 0;
+        irq_set[0].count = event_rfds.len() as u32;
+
+        {
+            // irq_set.data could be none, bool or fd according to flags, so irq_set.data
+            // is u8 default, here irq_set.data is a vector of fds as u32, so 4 default u8
+            // are combined together as u32 for each fd.
+            // SAFETY: It is safe as enough space is reserved through
+            // vec_with_array_field(u32)<event_fds.len()>.
+            let fds = unsafe {
+                irq_set[0]
+                    .data
+                    .as_mut_slice(event_rfds.len() * mem::size_of::<u32>())
+            };
+            for (index, event_fd) in event_rfds.iter().enumerate() {
+                let fds_offset = index * mem::size_of::<u32>();
+                let fd = &mut fds[fds_offset..fds_offset + mem::size_of::<u32>()];
+                LittleEndian::write_u32(fd, event_fd.as_raw_fd() as u32);
+            }
+        }
+
+        vfio_syscall::set_device_irqs(self, irq_set.as_slice())
+            .map_err(|_| VfioError::VfioDeviceSetIrqResampleFd)
+    }
+
     /// Disables a VFIO device IRQs
     ///
     /// # Arguments
@@ -1344,6 +1394,9 @@ mod tests {
         device.enable_irq(3, Vec::new()).unwrap_err();
         device.enable_irq(0, Vec::new()).unwrap_err();
         device.enable_irq(1, Vec::new()).unwrap();
+
+        device.set_irq_resample_fd(1, Vec::new()).unwrap_err();
+        device.set_irq_resample_fd(0, Vec::new()).unwrap();
 
         device.disable_irq(3).unwrap_err();
         device.disable_irq(0).unwrap_err();

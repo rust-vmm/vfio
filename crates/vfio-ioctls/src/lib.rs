@@ -123,6 +123,8 @@ pub enum VfioError {
     VfioDeviceUnmaskIrq,
     #[error("failed to trigger vfio device irq")]
     VfioDeviceTriggerIrq,
+    #[error("failed to set vfio device irq resample fd")]
+    VfioDeviceSetIrqResampleFd,
     #[error("failed to duplicate fd")]
     VfioDeviceDupFd,
     #[error("wrong device fd type")]

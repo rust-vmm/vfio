@@ -330,7 +330,7 @@ impl VfioContainer {
                 .map_err(|_| VfioError::GetHostAddress)?;
             self.vfio_dma_map(
                 region.start_addr().raw_value(),
-                region.len() as u64,
+                region.len(),
                 host_addr as u64,
             )
         })
@@ -345,7 +345,7 @@ impl VfioContainer {
     /// * mem: pinned guest memory which could be accessed by devices binding to the container.
     pub fn vfio_unmap_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
         mem.iter().try_for_each(|region| {
-            self.vfio_dma_unmap(region.start_addr().raw_value(), region.len() as u64)
+            self.vfio_dma_unmap(region.start_addr().raw_value(), region.len())
         })
     }
 
@@ -459,7 +459,7 @@ impl VfioGroup {
         OpenOptions::new()
             .read(true)
             .write(true)
-            .open(&group_path)
+            .open(group_path)
             .map_err(|e| VfioError::OpenGroup(e, id.to_string()))
     }
 

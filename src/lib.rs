@@ -1145,7 +1145,7 @@ impl Server {
                         message_id: cmd.header.message_id,
                         command: Command::RegionRead,
                         flags: HeaderFlags::Reply as u32,
-                        message_size: size_of::<RegionAccess>() as u32,
+                        message_size: size_of::<RegionAccess>() as u32 + count,
                         ..Default::default()
                     },
                     region,

@@ -947,7 +947,7 @@ impl Server {
                         cmd.offset,
                         cmd.address,
                         cmd.size,
-                        Some(&fds[0]),
+                        if fds.len() > 1 { Some(&fds[0]) } else { None },
                     )
                     .map_err(Error::Backend)?;
 

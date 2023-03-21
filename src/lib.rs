@@ -985,7 +985,7 @@ impl Server {
                         message_id: cmd.header.message_id,
                         command: Command::DmaUnmap,
                         flags: HeaderFlags::Reply as u32,
-                        message_size: size_of::<Header>() as u32,
+                        message_size: size_of::<DmaUnmap>() as u32,
                         ..Default::default()
                     },
                     argsz: cmd.argsz,

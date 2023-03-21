@@ -136,6 +136,7 @@ struct DeviceGetInfo {
     flags: u32,
     num_regions: u32,
     num_irqs: u32,
+    cap_offset: u32,
 }
 
 #[repr(C)]
@@ -1023,6 +1024,7 @@ impl Server {
                         },
                     num_regions: self.regions.len() as u32,
                     num_irqs: self.irqs.len() as u32,
+                    cap_offset: 0,
                 };
                 stream
                     .write_all(reply.as_slice())

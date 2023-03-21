@@ -4,7 +4,7 @@
 //
 
 use bitflags::bitflags;
-use libc::{c_void, iovec};
+use libc::{c_void, iovec, EINVAL};
 use std::ffi::CString;
 use std::fs::File;
 use std::io::{IoSlice, Read, Write};
@@ -276,6 +276,8 @@ pub enum Error {
     UnsupportedFeature,
     #[error("Error from backend: {0:?}")]
     Backend(#[source] std::io::Error),
+    #[error("Invalid input")]
+    InvalidInput,
 }
 
 impl Client {
@@ -1034,6 +1036,11 @@ impl Server {
                 stream
                     .read_exact(&mut cmd.as_mut_slice()[size_of::<Header>()..])
                     .map_err(Error::StreamRead)?;
+
+                if cmd.region_info.index as usize > self.regions.len() {
+                    return Err(Error::InvalidInput);
+                }
+
                 // TODO: Need to handle region capabilities e.g. sparse regions
                 let reply = DeviceGetRegionInfo {
                     header: Header {
@@ -1116,6 +1123,10 @@ impl Server {
 
                 let (region, offset, count) = (cmd.region, cmd.offset, cmd.count);
 
+                if region as usize > self.regions.len() {
+                    return Err(Error::InvalidInput);
+                }
+
                 let mut data = vec![0u8; count as usize];
                 backend
                     .region_read(region, offset, &mut data)
@@ -1148,6 +1159,10 @@ impl Server {
                     .map_err(Error::StreamRead)?;
 
                 let (region, offset, count) = (cmd.region, cmd.offset, cmd.count);
+
+                if region as usize > self.regions.len() {
+                    return Err(Error::InvalidInput);
+                }
 
                 let mut data = vec![0u8; count as usize];
                 stream.read_exact(&mut data).map_err(Error::StreamRead)?;
@@ -1230,7 +1245,11 @@ impl Server {
                     command: header.command,
                     flags: HeaderFlags::Error as u32,
                     message_size: size_of::<Header>() as u32,
-                    error: 0,
+                    error: if matches!(e, Error::InvalidInput) {
+                        EINVAL as u32
+                    } else {
+                        0
+                    },
                 };
                 stream
                     .write_all(reply.as_slice())

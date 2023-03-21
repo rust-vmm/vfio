@@ -914,7 +914,7 @@ impl Server {
                         ..Default::default()
                     },
                     major: 0,
-                    minor: 1,
+                    minor: 0,
                 };
 
                 let server_version_data = CString::new(server_version_data.as_bytes()).unwrap();

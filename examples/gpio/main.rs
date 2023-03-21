@@ -83,13 +83,35 @@ impl ServerBackend for TestBackend {
         offset: u64,
         data: &mut [u8],
     ) -> Result<(), std::io::Error> {
-        info!("read region = {region} offset = {offset}");
+        let len = data.len();
+        info!("read region = {region} offset = {offset} len = {len}");
 
         if region == VFIO_PCI_CONFIG_REGION_INDEX {
-            let reg_idx = offset as usize / 4;
-            let v = self.configuration.read_config_register(reg_idx);
-            let reg_offset = offset as usize % 4;
-            data.copy_from_slice(&v.to_le_bytes()[reg_offset..reg_offset + data.len()]);
+            if len > 4 {
+                // For larger accesses require multiple of 4 and natural
+                assert!(len % 4 == 0);
+                assert!(offset % 4 == 0);
+                let mut reg_idx = offset as usize / 4;
+                let mut data_offset = 0;
+                while data_offset < len {
+                    let v = self.configuration.read_config_register(reg_idx);
+                    data[data_offset..data_offset + 4].copy_from_slice(&v.to_le_bytes());
+                    reg_idx += 1;
+                    data_offset += 4;
+                }
+            } else {
+                // Require access to be naturally aligned
+                let reg_idx = offset as usize / 4;
+                let reg_offset = offset as usize % 4;
+                match reg_offset {
+                    0 => {}
+                    1 | 3 => assert!(len == 1),
+                    2 => assert!(len == 1 || len == 2),
+                    _ => unreachable!(),
+                }
+                let v = self.configuration.read_config_register(reg_idx);
+                data.copy_from_slice(&v.to_le_bytes()[reg_offset..reg_offset + data.len()]);
+            }
         } else if region == VFIO_PCI_BAR2_REGION_INDEX && offset == 0 {
             info!("gpio value read: count = {}", self.count);
             self.count += 1;

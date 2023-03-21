@@ -888,38 +888,38 @@ impl Server {
                 stream
                     .read_exact(&mut raw_version_data)
                     .map_err(Error::StreamRead)?;
-                let version_data = CString::from_vec_with_nul(raw_version_data)
+                let client_version_data = CString::from_vec_with_nul(raw_version_data)
                     .unwrap()
                     .to_string_lossy()
                     .into_owned();
-                let client_capabilities: Capabilities =
-                    serde_json::from_str(&version_data).map_err(Error::DeserializeCapabilites)?;
+                let client_capabilities: Capabilities = serde_json::from_str(&client_version_data)
+                    .map_err(Error::DeserializeCapabilites)?;
 
                 info!(
                     "Received client version: major = {} minor = {} capabilities = {:?}",
                     client_version.major, client_version.minor, client_capabilities
                 );
 
-                let version = Version {
+                let server_capabilities = Capabilities::default();
+                let server_version_data = serde_json::to_string(&server_capabilities)
+                    .map_err(Error::SerializeCapabilites)?;
+                let server_version = Version {
                     header: Header {
                         message_id: client_version.header.message_id,
                         command: Command::Version,
                         flags: HeaderFlags::Reply as u32,
-                        message_size: (size_of::<Version>() + version_data.len() + 1) as u32,
+                        message_size: (size_of::<Version>() + server_version_data.len() + 1) as u32,
                         ..Default::default()
                     },
                     major: 0,
                     minor: 1,
                 };
 
-                let server_capabilities = Capabilities::default();
-                let version_data = serde_json::to_string(&server_capabilities)
-                    .map_err(Error::SerializeCapabilites)?;
-                let version_data = CString::new(version_data.as_bytes()).unwrap();
+                let server_version_data = CString::new(server_version_data.as_bytes()).unwrap();
 
                 let bufs = vec![
-                    IoSlice::new(version.as_slice()),
-                    IoSlice::new(version_data.as_bytes_with_nul()),
+                    IoSlice::new(server_version.as_slice()),
+                    IoSlice::new(server_version_data.as_bytes_with_nul()),
                 ];
 
                 // TODO: Use write_all_vectored() when ready
@@ -927,7 +927,7 @@ impl Server {
 
                 info!(
                     "Sent server version: major = {} minor = {} capabilities = {:?}",
-                    version.major, version.minor, server_capabilities
+                    server_version.major, server_version.minor, server_capabilities
                 );
             }
             Command::DmaMap => {

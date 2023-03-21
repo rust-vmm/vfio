@@ -1014,7 +1014,7 @@ impl Server {
                         message_size: size_of::<DeviceGetInfo>() as u32,
                         ..Default::default()
                     },
-                    argsz: size_of::<DeviceGetInfo>() as u32,
+                    argsz: size_of::<DeviceGetInfo>() as u32 - size_of::<Header>() as u32,
                     // TODO: Consider non-PCI devices
                     flags: VFIO_DEVICE_FLAGS_PCI
                         | if self.resettable {

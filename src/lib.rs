@@ -1065,6 +1065,10 @@ impl Server {
                     .read_exact(&mut cmd.as_mut_slice()[size_of::<Header>()..])
                     .map_err(Error::StreamRead)?;
 
+                if cmd.index as usize > self.irqs.len() {
+                    return Err(Error::InvalidInput);
+                }
+
                 let irq = &self.irqs[cmd.index as usize];
 
                 let reply = GetIrqInfo {
@@ -1092,6 +1096,10 @@ impl Server {
                 stream
                     .read_exact(&mut cmd.as_mut_slice()[size_of::<Header>()..])
                     .map_err(Error::StreamRead)?;
+
+                if cmd.index as usize > self.irqs.len() {
+                    return Err(Error::InvalidInput);
+                }
 
                 if cmd.flags & VFIO_IRQ_SET_DATA_BOOL > 0 {
                     return Err(Error::UnsupportedFeature);

@@ -5,7 +5,7 @@
 
 use argh::FromArgs;
 use log::info;
-use pci::PciBarConfiguration;
+use pci::{PciBarConfiguration, PciSubclass};
 use std::{fs::File, io::Write, mem::size_of, num::Wrapping, path::PathBuf};
 use vfio_bindings::bindings::vfio::{
     vfio_region_info, VFIO_IRQ_INFO_EVENTFD, VFIO_IRQ_SET_ACTION_TRIGGER,
@@ -15,12 +15,14 @@ use vfio_bindings::bindings::vfio::{
 };
 use vfio_user::{IrqInfo, Server, ServerBackend};
 
+mod pci;
+
 #[derive(Copy, Clone)]
 enum PciVfioUserSubclass {
     VfioUserSubclass = 0xff,
 }
 
-impl pci::PciSubclass for PciVfioUserSubclass {
+impl PciSubclass for PciVfioUserSubclass {
     fn get_register_value(&self) -> u8 {
         *self as u8
     }
@@ -47,19 +49,17 @@ impl TestBackend {
         let mut configuration = pci::PciConfiguration::new(
             0x494f,
             0xdc8,
-            0x0,
             pci::PciClassCode::Other,
             &subclass as &dyn pci::PciSubclass,
             None,
             pci::PciHeaderType::Device,
             0,
             0,
-            None,
-            None,
+            0,
         );
 
         configuration
-            .add_pci_bar(&PciBarConfiguration::new(
+            .add_pci_bar(PciBarConfiguration::new(
                 VFIO_PCI_BAR2_REGION_INDEX as usize,
                 0x100,
                 pci::PciBarRegionType::IoRegion,
@@ -94,7 +94,7 @@ impl ServerBackend for TestBackend {
                 let mut reg_idx = offset as usize / 4;
                 let mut data_offset = 0;
                 while data_offset < len {
-                    let v = self.configuration.read_config_register(reg_idx);
+                    let v = self.configuration.read_reg(reg_idx);
                     data[data_offset..data_offset + 4].copy_from_slice(&v.to_le_bytes());
                     reg_idx += 1;
                     data_offset += 4;
@@ -109,7 +109,7 @@ impl ServerBackend for TestBackend {
                     2 => assert!(len == 1 || len == 2),
                     _ => unreachable!(),
                 }
-                let v = self.configuration.read_config_register(reg_idx);
+                let v = self.configuration.read_reg(reg_idx);
                 data.copy_from_slice(&v.to_le_bytes()[reg_offset..reg_offset + data.len()]);
             }
         } else if region == VFIO_PCI_BAR2_REGION_INDEX && offset == 0 {
@@ -136,7 +136,7 @@ impl ServerBackend for TestBackend {
         info!("write region = {region} offset = {offset}");
         if region == VFIO_PCI_CONFIG_REGION_INDEX {
             self.configuration
-                .write_config_register(offset as usize / 4, offset % 4, data);
+                .write_reg(offset as usize / 4, offset % 4, data);
         }
 
         Ok(())

@@ -212,6 +212,11 @@ struct Capabilities {
     migration: MigrationCapabilities,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default)]
+struct CapabilitiesData {
+    capabilities: Capabilities,
+}
+
 impl Default for Capabilities {
     fn default() -> Self {
         Self {
@@ -300,7 +305,7 @@ impl Client {
     }
 
     fn negotiate_version(&mut self) -> Result<(), Error> {
-        let caps = Capabilities::default();
+        let caps = CapabilitiesData::default();
 
         let version_data = serde_json::to_string(&caps).map_err(Error::SerializeCapabilites)?;
 
@@ -331,7 +336,7 @@ impl Client {
 
         debug!(
             "Sent client version information: major = {} minor = {} capabilities = {:?}",
-            version.major, version.minor, &caps
+            version.major, version.minor, &caps.capabilities
         );
 
         self.next_message_id += Wrapping(1);
@@ -352,13 +357,13 @@ impl Client {
             .read_exact(server_version_data.as_mut_slice())
             .map_err(Error::StreamRead)?;
 
-        let server_caps: Capabilities =
+        let server_caps: CapabilitiesData =
             serde_json::from_slice(&server_version_data[0..server_version_data.len() - 1])
                 .map_err(Error::DeserializeCapabilites)?;
 
         debug!(
             "Received server version information: major = {} minor = {} capabilities = {:?}",
-            server_version.major, server_version.minor, &server_caps
+            server_version.major, server_version.minor, &server_caps.capabilities
         );
 
         Ok(())
@@ -894,15 +899,16 @@ impl Server {
                     .unwrap()
                     .to_string_lossy()
                     .into_owned();
-                let client_capabilities: Capabilities = serde_json::from_str(&client_version_data)
-                    .map_err(Error::DeserializeCapabilites)?;
+                let client_capabilities: CapabilitiesData =
+                    serde_json::from_str(&client_version_data)
+                        .map_err(Error::DeserializeCapabilites)?;
 
                 info!(
                     "Received client version: major = {} minor = {} capabilities = {:?}",
-                    client_version.major, client_version.minor, client_capabilities
+                    client_version.major, client_version.minor, client_capabilities.capabilities,
                 );
 
-                let server_capabilities = Capabilities::default();
+                let server_capabilities = CapabilitiesData::default();
                 let server_version_data = serde_json::to_string(&server_capabilities)
                     .map_err(Error::SerializeCapabilites)?;
                 let server_version = Version {
@@ -929,7 +935,7 @@ impl Server {
 
                 info!(
                     "Sent server version: major = {} minor = {} capabilities = {:?}",
-                    server_version.major, server_version.minor, server_capabilities
+                    server_version.major, server_version.minor, server_capabilities.capabilities
                 );
             }
             Command::DmaMap => {

@@ -5,6 +5,7 @@
 
 use bitflags::bitflags;
 use libc::{c_void, iovec, EINVAL};
+use libc::{sysconf, _SC_PAGESIZE};
 use std::ffi::CString;
 use std::fs::File;
 use std::io::{IoSlice, Read, Write};
@@ -90,8 +91,14 @@ const fn default_max_data_xfer_size() -> u32 {
     1048576
 }
 
-const fn default_migration_capabilities() -> MigrationCapabilities {
-    MigrationCapabilities { pgsize: 4096 }
+#[inline(always)]
+fn pagesize() -> u32 {
+    // SAFETY: sysconf
+    unsafe { sysconf(_SC_PAGESIZE) as u32 }
+}
+
+fn default_migration_capabilities() -> MigrationCapabilities {
+    MigrationCapabilities { pgsize: pagesize() }
 }
 
 bitflags! {

@@ -188,25 +188,25 @@ struct DeviceReset {
     header: Header,
 }
 
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for Header {}
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for Version {}
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for DmaMap {}
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for DmaUnmap {}
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for DeviceGetInfo {}
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for DeviceGetRegionInfo {}
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for RegionAccess {}
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for GetIrqInfo {}
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for SetIrqs {}
-// SAFETY: data structure only contain a sereis of integers
+// SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for DeviceReset {}
 
 #[derive(Serialize, Deserialize, Debug)]

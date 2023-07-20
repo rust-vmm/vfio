@@ -600,7 +600,7 @@ impl Client {
         let mmap_cap_size = size_of::<vfio_region_info_cap_sparse_mmap>() as u32;
         let mmap_area_size = size_of::<vfio_region_sparse_mmap_area>() as u32;
 
-        let cap_data_ptr = cap_data.as_ptr() as *const u8;
+        let cap_data_ptr = cap_data.as_ptr();
         let mut region_info_offset = region_info.cap_offset;
         while region_info_offset != 0 {
             // calculate the offset from the begining of the cap_data based on the offset

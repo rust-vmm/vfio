@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/vfio-bindings", "crates/vfio-ioctls"]
+members = ["vfio-bindings", "vfio-ioctls"]
 resolver = "2"

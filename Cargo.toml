@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/vfio-bindings",
-    "crates/vfio-ioctls",
+    "vfio-bindings",
+    "vfio-ioctls",
 ]
 resolver = "2"

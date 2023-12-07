@@ -877,6 +877,14 @@ impl VfioDevice {
         self.irqs.get(&irq_index)
     }
 
+    /// Get information about all VFIO IRQs.
+    pub fn get_irq_infos(&self) -> Vec<&VfioIrq> {
+        let mut irqs = self.irqs.values().collect::<Vec<_>>();
+        irqs.sort_by(|&i1, &i2| i1.index.cmp(&i2.index));
+
+        irqs
+    }
+
     /// Trigger a VFIO device IRQ from userspace.
     ///
     /// Once a signaling mechanism is set, DATA_BOOL or DATA_NONE can be used with ACTION_TRIGGER
@@ -1408,6 +1416,10 @@ mod tests {
         assert!(device.get_irq_info(3).is_none());
         let irq = device.get_irq_info(2).unwrap();
         assert_eq!(irq.count, 2048);
+
+        let infos = device.get_irq_infos();
+        assert_eq!(infos.len(), 3);
+        assert_eq!(infos[2], device.get_irq_info(2).unwrap());
 
         device.trigger_irq(3, 0).unwrap_err();
         device.trigger_irq(2, 2048).unwrap_err();

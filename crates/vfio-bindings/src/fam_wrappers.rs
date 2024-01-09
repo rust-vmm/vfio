@@ -64,7 +64,8 @@ mod tests {
 
         // Build a FAM wrapper for this vfio_irq_set.
         let mut irq_set_wrapper = IrqSet::new(event_fds.len() * mem::size_of::<u32>()).unwrap();
-        let mut irq_set_fam = irq_set_wrapper.as_mut_fam_struct();
+        // SAFETY: Safe as we create the irq_set_wrapper with the constructor
+        let irq_set_fam = unsafe { irq_set_wrapper.as_mut_fam_struct() };
 
         let fds_fam = irq_set_fam.as_mut_slice();
         for (index, event_fd) in event_fds.iter().enumerate() {

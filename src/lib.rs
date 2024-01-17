@@ -355,11 +355,8 @@ impl Client {
 
         debug!("Reply: {:?}", server_version);
 
-        let mut server_version_data = Vec::new();
-        server_version_data.resize(
-            server_version.header.message_size as usize - size_of::<Version>(),
-            0,
-        );
+        let mut server_version_data =
+            vec![0; server_version.header.message_size as usize - size_of::<Version>()];
         self.stream
             .read_exact(server_version_data.as_mut_slice())
             .map_err(Error::StreamRead)?;
@@ -897,8 +894,8 @@ impl Server {
                     .read_exact(&mut client_version.as_mut_slice()[size_of::<Header>()..])
                     .map_err(Error::StreamRead)?;
 
-                let mut raw_version_data = Vec::new();
-                raw_version_data.resize(header.message_size as usize - size_of::<Version>(), 0u8);
+                let mut raw_version_data =
+                    vec![0; header.message_size as usize - size_of::<Version>()];
                 stream
                     .read_exact(&mut raw_version_data)
                     .map_err(Error::StreamRead)?;

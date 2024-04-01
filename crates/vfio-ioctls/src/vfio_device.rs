@@ -29,23 +29,20 @@ use kvm_bindings::{
 };
 #[cfg(all(feature = "kvm", not(test)))]
 use kvm_ioctls::DeviceFd as KvmDeviceFd;
-#[cfg(all(feature = "mshv", target_arch = "x86_64", not(test)))]
+#[cfg(all(feature = "mshv", not(test)))]
 use mshv_bindings::{
     mshv_device_attr, MSHV_DEV_VFIO_GROUP, MSHV_DEV_VFIO_GROUP_ADD, MSHV_DEV_VFIO_GROUP_DEL,
 };
-#[cfg(all(feature = "mshv", target_arch = "x86_64", not(test)))]
+#[cfg(all(feature = "mshv", not(test)))]
 use mshv_ioctls::DeviceFd as MshvDeviceFd;
-#[cfg(all(
-    any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")),
-    not(test)
-))]
+#[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
 use std::os::unix::io::FromRawFd;
 
 #[derive(Debug)]
 enum DeviceFdInner {
     #[cfg(all(feature = "kvm", not(test)))]
     Kvm(KvmDeviceFd),
-    #[cfg(all(feature = "mshv", target_arch = "x86_64", not(test)))]
+    #[cfg(all(feature = "mshv", not(test)))]
     Mshv(MshvDeviceFd),
 }
 
@@ -69,12 +66,12 @@ impl VfioDeviceFd {
         }
     }
     /// Create an VfioDeviceFd from an MSHV DeviceFd
-    #[cfg(all(feature = "mshv", target_arch = "x86_64", not(test)))]
+    #[cfg(all(feature = "mshv", not(test)))]
     pub fn new_from_mshv(fd: MshvDeviceFd) -> Self {
         VfioDeviceFd(DeviceFdInner::Mshv(fd))
     }
     /// Extract the MSHV DeviceFd from an VfioDeviceFd
-    #[cfg(all(feature = "mshv", target_arch = "x86_64", not(test)))]
+    #[cfg(all(feature = "mshv", not(test)))]
     pub fn to_mshv(self) -> Result<MshvDeviceFd> {
         match self {
             VfioDeviceFd(DeviceFdInner::Mshv(fd)) => Ok(fd),
@@ -83,10 +80,7 @@ impl VfioDeviceFd {
         }
     }
     /// Try to duplicate an VfioDeviceFd
-    #[cfg(all(
-        any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")),
-        not(test)
-    ))]
+    #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
     pub fn try_clone(&self) -> Result<Self> {
         match &self.0 {
             #[cfg(feature = "kvm")]
@@ -101,7 +95,7 @@ impl VfioDeviceFd {
                     Ok(VfioDeviceFd(DeviceFdInner::Kvm(kvm_fd)))
                 }
             }
-            #[cfg(all(feature = "mshv", target_arch = "x86_64"))]
+            #[cfg(feature = "mshv")]
             DeviceFdInner::Mshv(fd) => {
                 // SAFETY: FFI call to libc
                 let dup_fd = unsafe { libc::dup(fd.as_raw_fd()) };
@@ -243,7 +237,7 @@ impl VfioContainer {
         }
 
         // Add the new group object to the hypervisor driver.
-        #[cfg(any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")))]
+        #[cfg(any(feature = "kvm", feature = "mshv"))]
         if let Err(e) = self.device_add_group(&group) {
             let _ = vfio_syscall::unset_group_container(&group, self);
             return Err(e);
@@ -264,7 +258,7 @@ impl VfioContainer {
         // - one reference cloned in VfioDevice.drop() and passed into here
         // - one reference held by the groups hashmap
         if Arc::strong_count(&group) == 3 {
-            #[cfg(any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")))]
+            #[cfg(any(feature = "kvm", feature = "mshv"))]
             match self.device_del_group(&group) {
                 Ok(_) => {}
                 Err(e) => {
@@ -349,10 +343,7 @@ impl VfioContainer {
         })
     }
 
-    #[cfg(all(
-        any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")),
-        not(test)
-    ))]
+    #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
     fn device_set_group(&self, group: &VfioGroup, add: bool) -> Result<()> {
         let group_fd_ptr = &group.as_raw_fd() as *const i32;
 
@@ -374,7 +365,7 @@ impl VfioContainer {
                     fd.set_device_attr(&dev_attr)
                         .map_err(VfioError::SetDeviceAttr)
                 }
-                #[cfg(all(feature = "mshv", target_arch = "x86_64"))]
+                #[cfg(feature = "mshv")]
                 DeviceFdInner::Mshv(fd) => {
                     let flag = if add {
                         MSHV_DEV_VFIO_GROUP_ADD
@@ -388,7 +379,7 @@ impl VfioContainer {
                         addr: group_fd_ptr as u64,
                     };
                     fd.set_device_attr(&dev_attr)
-                        .map_err(VfioError::SetDeviceAttr)
+                        .map_err(|e| VfioError::SetDeviceAttr(e.into()))
                 }
             }
         } else {
@@ -402,10 +393,7 @@ impl VfioContainer {
     ///
     /// # Parameters
     /// * group: target VFIO group
-    #[cfg(all(
-        any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")),
-        not(test)
-    ))]
+    #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
     fn device_add_group(&self, group: &VfioGroup) -> Result<()> {
         self.device_set_group(group, true)
     }
@@ -416,10 +404,7 @@ impl VfioContainer {
     ///
     /// # Parameters
     /// * group: target VFIO group
-    #[cfg(all(
-        any(feature = "kvm", all(feature = "mshv", target_arch = "x86_64")),
-        not(test)
-    ))]
+    #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
     fn device_del_group(&self, group: &VfioGroup) -> Result<()> {
         self.device_set_group(group, false)
     }

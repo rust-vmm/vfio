@@ -388,7 +388,7 @@ impl VfioContainer {
                         addr: group_fd_ptr as u64,
                     };
                     fd.set_device_attr(&dev_attr)
-                        .map_err(VfioError::SetDeviceAttr)
+                        .map_err(|e| VfioError::SetDeviceAttr(e.into()))
                 }
             }
         } else {

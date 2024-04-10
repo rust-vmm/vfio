@@ -171,9 +171,7 @@ pub(crate) mod vfio_syscall {
     }
 
     pub(crate) fn set_device_irqs(device: &VfioDevice, irq_set: &[vfio_irq_set]) -> Result<()> {
-        if irq_set.is_empty()
-            || irq_set[0].argsz as usize > irq_set.len() * size_of::<vfio_irq_set>()
-        {
+        if irq_set.is_empty() || irq_set[0].argsz as usize > std::mem::size_of_val(irq_set) {
             Err(VfioError::VfioDeviceSetIrq)
         } else {
             // SAFETY: we are the owner of self and irq_set which are valid value
@@ -334,9 +332,7 @@ pub(crate) mod vfio_syscall {
 
     #[allow(clippy::if_same_then_else)]
     pub(crate) fn set_device_irqs(_device: &VfioDevice, irq_sets: &[vfio_irq_set]) -> Result<()> {
-        if irq_sets.is_empty()
-            || irq_sets[0].argsz as usize > irq_sets.len() * size_of::<vfio_irq_set>()
-        {
+        if irq_sets.is_empty() || irq_sets[0].argsz as usize > std::mem::size_of_val(irq_sets) {
             Err(VfioError::VfioDeviceSetIrq)
         } else {
             let irq_set = &irq_sets[0];

@@ -767,9 +767,21 @@ impl VfioDeviceInfo {
                 offset: 0,
             };
 
-            if vfio_syscall::get_device_region_info(self, &mut reg_info).is_err() {
-                error!("Could not get region #{} info", i);
-                continue;
+            if let Err(e) = vfio_syscall::get_device_region_info(self, &mut reg_info) {
+                match e {
+                    // Non-VGA devices do not have the VGA region,
+                    // the kernel indicates this by returning -EINVAL,
+                    // and it's not an error.
+                    VfioError::VfioDeviceGetRegionInfo(e)
+                        if e.errno() == libc::EINVAL && i == VFIO_PCI_VGA_REGION_INDEX =>
+                    {
+                        continue;
+                    }
+                    _ => {
+                        error!("Could not get region #{} info {}", i, e);
+                        continue;
+                    }
+                }
             }
 
             let mut region = VfioRegion {
@@ -1371,10 +1383,11 @@ mod tests {
         assert!(group.as_raw_fd() >= 0);
         let device = group.get_device(tmp_file.as_path()).unwrap();
         assert_eq!(device.num_irqs, 3);
-        assert_eq!(device.num_regions, 8);
+        assert_eq!(device.num_regions, 9);
 
         let regions = device.get_regions().unwrap();
-        assert_eq!(regions.len(), 7)
+        // test code skips VFIO_PCI_VGA_REGION_INDEX
+        assert_eq!(regions.len(), 8)
     }
 
     #[test]
@@ -1387,7 +1400,7 @@ mod tests {
         assert_eq!(device.max_interrupts(), 2048);
 
         device.reset();
-        assert_eq!(device.regions.len(), 7);
+        assert_eq!(device.regions.len(), 8);
         assert_eq!(device.irqs.len(), 3);
 
         assert!(device.get_irq_info(3).is_none());
@@ -1421,16 +1434,22 @@ mod tests {
 
         assert_eq!(device.get_region_flags(1), VFIO_REGION_INFO_FLAG_CAPS);
         assert_eq!(device.get_region_flags(7), 0);
+        assert_eq!(device.get_region_flags(8), 0);
         assert_eq!(device.get_region_offset(1), 0x20000);
-        assert_eq!(device.get_region_offset(7), 0);
+        assert_eq!(device.get_region_offset(7), 0x80000);
+        assert_eq!(device.get_region_offset(8), 0);
         assert_eq!(device.get_region_size(1), 0x2000);
-        assert_eq!(device.get_region_size(7), 0);
+        assert_eq!(device.get_region_size(7), 0x8000);
+        assert_eq!(device.get_region_size(8), 0);
         assert_eq!(device.get_region_caps(1).len(), 3);
         assert_eq!(device.get_region_caps(7).len(), 0);
+        assert_eq!(device.get_region_caps(8).len(), 0);
 
         let mut buf = [0u8; 16];
+        device.region_read(8, &mut buf, 0x30000);
         device.region_read(7, &mut buf, 0x30000);
         device.region_read(1, &mut buf, 0x30000);
+        device.region_write(8, &buf, 0x30000);
         device.region_write(7, &buf, 0x30000);
         device.region_write(1, &buf, 0x30000);
 

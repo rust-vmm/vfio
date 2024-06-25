@@ -325,7 +325,7 @@ pub(crate) mod vfio_syscall {
 
     pub(crate) fn get_device_info(_file: &File, dev_info: &mut vfio_device_info) -> Result<()> {
         dev_info.flags = VFIO_DEVICE_FLAGS_PCI;
-        dev_info.num_regions = VFIO_PCI_CONFIG_REGION_INDEX + 1;
+        dev_info.num_regions = VFIO_PCI_NUM_REGIONS;
         dev_info.num_irqs = VFIO_PCI_MSIX_IRQ_INDEX + 1;
         Ok(())
     }
@@ -377,12 +377,17 @@ pub(crate) mod vfio_syscall {
                 reg_info.size = 0x2000;
                 reg_info.offset = 0x20000;
             }
-            idx if (2..7).contains(&idx) => {
+            idx if idx == VFIO_PCI_VGA_REGION_INDEX => {
+                return Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(
+                    libc::EINVAL,
+                )))
+            }
+            idx if (2..VFIO_PCI_NUM_REGIONS).contains(&idx) => {
                 reg_info.flags = 0;
                 reg_info.size = (idx as u64 + 1) * 0x1000;
                 reg_info.offset = (idx as u64 + 1) * 0x10000;
             }
-            7 => {
+            idx if idx == VFIO_PCI_NUM_REGIONS => {
                 return Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(
                     libc::EINVAL,
                 )))

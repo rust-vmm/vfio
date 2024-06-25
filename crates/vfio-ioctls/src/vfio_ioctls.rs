@@ -196,7 +196,7 @@ pub(crate) mod vfio_syscall {
         // SAFETY: we are the owner of dev and irq_info which are valid value
         let ret = unsafe { ioctl_with_mut_ref(dev_info, VFIO_DEVICE_GET_IRQ_INFO(), irq_info) };
         if ret < 0 {
-            Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(-ret)))
+            Err(VfioError::VfioDeviceGetRegionInfo(SysError::last()))
         } else {
             Ok(())
         }
@@ -210,7 +210,7 @@ pub(crate) mod vfio_syscall {
         // and we verify the return value.
         let ret = unsafe { ioctl_with_mut_ref(dev_info, VFIO_DEVICE_GET_REGION_INFO(), reg_info) };
         if ret < 0 {
-            Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(-ret)))
+            Err(VfioError::VfioDeviceGetRegionInfo(SysError::last()))
         } else {
             Ok(())
         }
@@ -234,7 +234,7 @@ pub(crate) mod vfio_syscall {
                 ioctl_with_mut_ref(dev_info, VFIO_DEVICE_GET_REGION_INFO(), &mut reg_infos[0])
             };
             if ret < 0 {
-                Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(-ret)))
+                Err(VfioError::VfioDeviceGetRegionInfo(SysError::last()))
             } else {
                 Ok(())
             }

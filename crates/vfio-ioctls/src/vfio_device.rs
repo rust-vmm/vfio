@@ -14,7 +14,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use byteorder::{ByteOrder, LittleEndian};
+use byteorder::{ByteOrder, NativeEndian};
 use log::{debug, error, warn};
 use vfio_bindings::bindings::vfio::*;
 use vm_memory::{Address, GuestMemory, GuestMemoryRegion, MemoryRegionAddress};
@@ -930,7 +930,7 @@ impl VfioDevice {
             for (index, event_fd) in event_fds.iter().enumerate() {
                 let fds_offset = index * mem::size_of::<u32>();
                 let fd = &mut fds[fds_offset..fds_offset + mem::size_of::<u32>()];
-                LittleEndian::write_u32(fd, event_fd.as_raw_fd() as u32);
+                NativeEndian::write_u32(fd, event_fd.as_raw_fd() as u32);
             }
         }
 
@@ -980,7 +980,7 @@ impl VfioDevice {
             for (index, event_fd) in event_rfds.iter().enumerate() {
                 let fds_offset = index * mem::size_of::<u32>();
                 let fd = &mut fds[fds_offset..fds_offset + mem::size_of::<u32>()];
-                LittleEndian::write_u32(fd, event_fd.as_raw_fd() as u32);
+                NativeEndian::write_u32(fd, event_fd.as_raw_fd() as u32);
             }
         }
 

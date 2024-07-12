@@ -196,7 +196,7 @@ pub(crate) mod vfio_syscall {
         // SAFETY: we are the owner of dev and irq_info which are valid value
         let ret = unsafe { ioctl_with_mut_ref(dev_info, VFIO_DEVICE_GET_IRQ_INFO(), irq_info) };
         if ret < 0 {
-            Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(-ret)))
+            Err(VfioError::VfioDeviceGetRegionInfo(SysError::last()))
         } else {
             Ok(())
         }
@@ -210,7 +210,7 @@ pub(crate) mod vfio_syscall {
         // and we verify the return value.
         let ret = unsafe { ioctl_with_mut_ref(dev_info, VFIO_DEVICE_GET_REGION_INFO(), reg_info) };
         if ret < 0 {
-            Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(-ret)))
+            Err(VfioError::VfioDeviceGetRegionInfo(SysError::last()))
         } else {
             Ok(())
         }
@@ -234,7 +234,7 @@ pub(crate) mod vfio_syscall {
                 ioctl_with_mut_ref(dev_info, VFIO_DEVICE_GET_REGION_INFO(), &mut reg_infos[0])
             };
             if ret < 0 {
-                Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(-ret)))
+                Err(VfioError::VfioDeviceGetRegionInfo(SysError::last()))
             } else {
                 Ok(())
             }
@@ -325,7 +325,7 @@ pub(crate) mod vfio_syscall {
 
     pub(crate) fn get_device_info(_file: &File, dev_info: &mut vfio_device_info) -> Result<()> {
         dev_info.flags = VFIO_DEVICE_FLAGS_PCI;
-        dev_info.num_regions = VFIO_PCI_CONFIG_REGION_INDEX + 1;
+        dev_info.num_regions = VFIO_PCI_NUM_REGIONS;
         dev_info.num_irqs = VFIO_PCI_MSIX_IRQ_INDEX + 1;
         Ok(())
     }
@@ -377,12 +377,17 @@ pub(crate) mod vfio_syscall {
                 reg_info.size = 0x2000;
                 reg_info.offset = 0x20000;
             }
-            idx if (2..7).contains(&idx) => {
+            idx if idx == VFIO_PCI_VGA_REGION_INDEX => {
+                return Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(
+                    libc::EINVAL,
+                )))
+            }
+            idx if (2..VFIO_PCI_NUM_REGIONS).contains(&idx) => {
                 reg_info.flags = 0;
                 reg_info.size = (idx as u64 + 1) * 0x1000;
                 reg_info.offset = (idx as u64 + 1) * 0x10000;
             }
-            7 => {
+            idx if idx == VFIO_PCI_NUM_REGIONS => {
                 return Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(
                     libc::EINVAL,
                 )))

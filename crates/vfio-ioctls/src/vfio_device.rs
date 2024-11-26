@@ -31,7 +31,7 @@ use kvm_bindings::{
 use kvm_ioctls::DeviceFd as KvmDeviceFd;
 #[cfg(all(feature = "mshv", not(test)))]
 use mshv_bindings::{
-    mshv_device_attr, MSHV_DEV_VFIO_GROUP, MSHV_DEV_VFIO_GROUP_ADD, MSHV_DEV_VFIO_GROUP_DEL,
+    mshv_device_attr, MSHV_DEV_VFIO_FILE, MSHV_DEV_VFIO_FILE_ADD, MSHV_DEV_VFIO_FILE_DEL,
 };
 #[cfg(all(feature = "mshv", not(test)))]
 use mshv_ioctls::DeviceFd as MshvDeviceFd;
@@ -368,13 +368,13 @@ impl VfioContainer {
                 #[cfg(feature = "mshv")]
                 DeviceFdInner::Mshv(fd) => {
                     let flag = if add {
-                        MSHV_DEV_VFIO_GROUP_ADD
+                        MSHV_DEV_VFIO_FILE_ADD
                     } else {
-                        MSHV_DEV_VFIO_GROUP_DEL
+                        MSHV_DEV_VFIO_FILE_DEL
                     };
                     let dev_attr = mshv_device_attr {
                         flags: 0,
-                        group: MSHV_DEV_VFIO_GROUP,
+                        group: MSHV_DEV_VFIO_FILE,
                         attr: u64::from(flag),
                         addr: group_fd_ptr as u64,
                     };

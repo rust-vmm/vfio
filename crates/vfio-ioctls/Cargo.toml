@@ -1,7 +1,10 @@
 [package]
 name = "vfio-ioctls"
 version = "0.2.0"
-authors = ["The Cloud Hypervisor Authors", "Liu Jiang <gerry@linux.alibaba.com>"]
+authors = [
+  "The Cloud Hypervisor Authors",
+  "Liu Jiang <gerry@linux.alibaba.com>",
+]
 license = "Apache-2.0 OR BSD-3-Clause"
 description = "Safe wrappers over VFIO ioctls"
 repository = "https://github.com/rust-vmm/vfio"
@@ -27,5 +30,8 @@ thiserror = "1.0"
 vfio-bindings = { version = "0.4.0", path = "../vfio-bindings" }
 vm-memory = { version = "0.16.0", features = ["backend-mmap"] }
 vmm-sys-util = "0.12.1"
-mshv-bindings = { version = "0.3.2", features = ["with-serde", "fam-wrappers"], optional  = true }
-mshv-ioctls = { version = "0.3.2", optional  = true }
+mshv-bindings = { version = "0.3.2", features = [
+  "with-serde",
+  "fam-wrappers",
+], optional = true }
+mshv-ioctls = { version = "0.3.2", optional = true }

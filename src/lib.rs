@@ -1047,7 +1047,7 @@ impl Server {
                     .read_exact(&mut cmd.as_mut_slice()[size_of::<Header>()..])
                     .map_err(Error::StreamRead)?;
 
-                if cmd.region_info.index as usize > self.regions.len() {
+                if cmd.region_info.index as usize >= self.regions.len() {
                     return Err(Error::InvalidInput);
                 }
 
@@ -1075,7 +1075,7 @@ impl Server {
                     .read_exact(&mut cmd.as_mut_slice()[size_of::<Header>()..])
                     .map_err(Error::StreamRead)?;
 
-                if cmd.index as usize > self.irqs.len() {
+                if cmd.index as usize >= self.irqs.len() {
                     return Err(Error::InvalidInput);
                 }
 
@@ -1107,7 +1107,7 @@ impl Server {
                     .read_exact(&mut cmd.as_mut_slice()[size_of::<Header>()..])
                     .map_err(Error::StreamRead)?;
 
-                if cmd.index as usize > self.irqs.len() {
+                if cmd.index as usize >= self.irqs.len() {
                     return Err(Error::InvalidInput);
                 }
 
@@ -1141,7 +1141,7 @@ impl Server {
 
                 let (region, offset, count) = (cmd.region, cmd.offset, cmd.count);
 
-                if region as usize > self.regions.len() {
+                if region as usize >= self.regions.len() {
                     return Err(Error::InvalidInput);
                 }
 
@@ -1178,7 +1178,7 @@ impl Server {
 
                 let (region, offset, count) = (cmd.region, cmd.offset, cmd.count);
 
-                if region as usize > self.regions.len() {
+                if region as usize >= self.regions.len() {
                     return Err(Error::InvalidInput);
                 }
 

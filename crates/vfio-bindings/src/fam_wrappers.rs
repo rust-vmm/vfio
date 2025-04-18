@@ -29,7 +29,7 @@ mod tests {
     use std::mem;
 
     fn vec_with_size_in_bytes<T: Default>(size_in_bytes: usize) -> Vec<T> {
-        let rounded_size = (size_in_bytes + mem::size_of::<T>() - 1) / mem::size_of::<T>();
+        let rounded_size = size_in_bytes.div_ceil(mem::size_of::<T>());
         let mut v = Vec::with_capacity(rounded_size);
         for _ in 0..rounded_size {
             v.push(T::default())

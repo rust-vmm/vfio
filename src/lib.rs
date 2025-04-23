@@ -826,7 +826,7 @@ pub trait ServerBackend {
         _offset: u64,
         _address: u64,
         _size: u64,
-        _fd: Option<&File>,
+        _fd: Option<File>,
     ) -> Result<(), std::io::Error>;
     fn dma_unmap(
         &mut self,
@@ -951,13 +951,21 @@ impl Server {
                     .read_exact(&mut cmd.as_mut_slice()[size_of::<Header>()..])
                     .map_err(Error::StreamRead)?;
 
+                let mut fds = fds;
+
+                // The specification demands that the caller passes 0
+                // or 1 file descriptor.
+                if fds.len() > 1 {
+                    return Err(Error::InvalidInput);
+                }
+
                 backend
                     .dma_map(
                         DmaMapFlags::from_bits_truncate(cmd.flags),
                         cmd.offset,
                         cmd.address,
                         cmd.size,
-                        if !fds.is_empty() { Some(&fds[0]) } else { None },
+                        fds.pop(),
                     )
                     .map_err(Error::Backend)?;
 

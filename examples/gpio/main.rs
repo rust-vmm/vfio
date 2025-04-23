@@ -148,7 +148,7 @@ impl ServerBackend for TestBackend {
         offset: u64,
         address: u64,
         size: u64,
-        fd: Option<&File>,
+        fd: Option<File>,
     ) -> Result<(), std::io::Error> {
         info!("dma_map flags = {flags:?} offset = {offset} address = {address} size = {size} fd = {fd:?}");
         Ok(())

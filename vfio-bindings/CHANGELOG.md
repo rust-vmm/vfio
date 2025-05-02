@@ -1,3 +1,9 @@
+# [v0.4.0]
+
+## Added
+
+- Update vmm-sys-util to ">=0.12.1"
+
 # [v0.3.1]
 
 - Update repository to https://github.com/rust-vmm/vfio

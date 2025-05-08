@@ -102,12 +102,14 @@ fn default_migration_capabilities() -> MigrationCapabilities {
 }
 
 bitflags! {
+    #[derive(Debug)]
     pub struct DmaMapFlags: u32 {
         const READ_ONLY = 1 << 0;
         const WRITE_ONLY = 1 << 1;
-        const READ_WRITE = Self::READ_ONLY.bits | Self::WRITE_ONLY.bits;
+        const READ_WRITE = Self::READ_ONLY.bits() | Self::WRITE_ONLY.bits();
     }
 
+    #[derive(Debug)]
     pub struct DmaUnmapFlags: u32 {
         const GET_DIRTY_PAGE_INFO = 1 << 1;
         const UNMAP_ALL = 1 << 2;
@@ -389,7 +391,7 @@ impl Client {
                 ..Default::default()
             },
             argsz: (size_of::<DmaMap>() - size_of::<Header>()) as u32,
-            flags: DmaMapFlags::READ_WRITE.bits,
+            flags: DmaMapFlags::READ_WRITE.bits(),
             offset,
             address,
             size,

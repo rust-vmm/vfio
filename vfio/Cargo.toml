@@ -1,3 +1,0 @@
-[workspace]
-members = ["vfio-bindings", "vfio-ioctls"]
-resolver = "2"

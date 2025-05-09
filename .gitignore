@@ -1,4 +1,6 @@
+**/*.rs.bk
 .idea
 .vscode
-target
+/target
 Cargo.lock
+kcov_output

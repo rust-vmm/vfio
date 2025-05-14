@@ -337,7 +337,7 @@ impl PciConfiguration {
     ) -> Self {
         let mut registers = [0u32; NUM_CONFIGURATION_REGISTERS];
         let mut writable_bits = [0u32; NUM_CONFIGURATION_REGISTERS];
-        registers[0] = u32::from(device_id) << 16 | u32::from(vendor_id);
+        registers[0] = (u32::from(device_id) << 16) | u32::from(vendor_id);
         // TODO(dverkamp): Status should be write-1-to-clear
         writable_bits[1] = 0x0000_ffff; // Status (r/o), command (r/w)
         let pi = if let Some(pi) = programming_interface {
@@ -345,16 +345,16 @@ impl PciConfiguration {
         } else {
             0
         };
-        registers[2] = u32::from(class_code.get_register_value()) << 24
-            | u32::from(subclass.get_register_value()) << 16
-            | u32::from(pi) << 8
+        registers[2] = (u32::from(class_code.get_register_value()) << 24)
+            | (u32::from(subclass.get_register_value()) << 16)
+            | (u32::from(pi) << 8)
             | u32::from(revision_id);
         writable_bits[3] = 0x0000_00ff; // Cacheline size (r/w)
         match header_type {
             PciHeaderType::Device => {
                 registers[3] = 0x0000_0000; // Header type 0 (device)
                 writable_bits[15] = 0x0000_00ff; // Interrupt line (r/w)
-                registers[11] = u32::from(subsystem_id) << 16 | u32::from(subsystem_vendor_id);
+                registers[11] = (u32::from(subsystem_id) << 16) | u32::from(subsystem_vendor_id);
             }
             PciHeaderType::Bridge => {
                 registers[3] = 0x0001_0000; // Header type 1 (bridge)
@@ -608,7 +608,7 @@ impl PciConfiguration {
             }
             PciBarRegionType::Memory64BitRegion => {
                 u64::from(self.registers[bar_idx] & BAR_MEM_ADDR_MASK)
-                    | u64::from(self.registers[bar_idx + 1]) << 32
+                    | (u64::from(self.registers[bar_idx + 1]) << 32)
             }
         }
     }

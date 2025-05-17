@@ -1,0 +1,27 @@
+[package]
+name = "vfio_user"
+version = "0.1.0"
+authors = ["The Cloud Hypervisor Authors"]
+edition = "2021"
+license = "Apache-2.0"
+description = "Support for vfio-user devices"
+repository = "https://github.com/rust-vmm/vfio-user"
+
+[[example]]
+name = "gpio"
+
+[dependencies]
+bitflags = "2.9.0"
+libc = "0.2.139"
+log = "0.4.17"
+serde = { version = "1.0.151", features = ["rc"] }
+serde_derive = "1.0.149"
+serde_json = "1.0.93"
+thiserror = "2.0.12"
+vfio-bindings = { version = "0.4.0", features = ["fam-wrappers"] }
+vm-memory = { version = "0.16.0", features = ["backend-mmap", "backend-atomic"] }
+vmm-sys-util = "0.13.0"
+
+[dev-dependencies]
+argh = "0.1.9"
+env_logger = "0.11.8"

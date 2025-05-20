@@ -532,50 +532,12 @@ impl VfioGroup {
         self.id
     }
 
-    #[inline]
-    /// Get device type from device_info flags.
-    ///
-    /// # Parameters
-    /// * `flags`: flags field in device_info structure.
-    fn get_device_type(flags: &u32) -> u32 {
-        // There may be more types of device here later according to vfio_bindings.
-        let device_type: u32 = VFIO_DEVICE_FLAGS_PCI
-            | VFIO_DEVICE_FLAGS_PLATFORM
-            | VFIO_DEVICE_FLAGS_AMBA
-            | VFIO_DEVICE_FLAGS_CCW
-            | VFIO_DEVICE_FLAGS_AP;
-
-        flags & device_type
-    }
-
     fn get_device(&self, name: &Path) -> Result<VfioDeviceInfo> {
         let uuid_osstr = name.file_name().ok_or(VfioError::InvalidPath)?;
         let uuid_str = uuid_osstr.to_str().ok_or(VfioError::InvalidPath)?;
         let path: CString = CString::new(uuid_str.as_bytes()).expect("CString::new() failed");
         let device = vfio_syscall::get_group_device_fd(self, &path)?;
-
-        let mut dev_info = vfio_device_info {
-            argsz: mem::size_of::<vfio_device_info>() as u32,
-            flags: 0,
-            num_regions: 0,
-            num_irqs: 0,
-            cap_offset: 0,
-            pad: 0,
-        };
-        vfio_syscall::get_device_info(&device, &mut dev_info)?;
-        match VfioGroup::get_device_type(&dev_info.flags) {
-            VFIO_DEVICE_FLAGS_PLATFORM => {}
-            VFIO_DEVICE_FLAGS_PCI => {
-                if dev_info.num_regions < VFIO_PCI_CONFIG_REGION_INDEX + 1
-                    || dev_info.num_irqs < VFIO_PCI_MSIX_IRQ_INDEX + 1
-                {
-                    return Err(VfioError::VfioDeviceGetInfoPCI);
-                }
-            }
-            _ => {
-                return Err(VfioError::VfioDeviceGetInfoOther);
-            }
-        }
+        let dev_info = VfioDeviceInfo::get_device_info(&device)?;
 
         Ok(VfioDeviceInfo::new(device, &dev_info))
     }
@@ -669,6 +631,49 @@ pub(crate) struct VfioDeviceInfo {
 }
 
 impl VfioDeviceInfo {
+    #[inline]
+    /// Get device type from device_info flags.
+    ///
+    /// # Parameters
+    /// * `flags`: flags field in device_info structure.
+    fn get_device_type(flags: &u32) -> u32 {
+        // There may be more types of device here later according to vfio_bindings.
+        let device_type: u32 = VFIO_DEVICE_FLAGS_PCI
+            | VFIO_DEVICE_FLAGS_PLATFORM
+            | VFIO_DEVICE_FLAGS_AMBA
+            | VFIO_DEVICE_FLAGS_CCW
+            | VFIO_DEVICE_FLAGS_AP;
+
+        flags & device_type
+    }
+
+    fn get_device_info(device: &File) -> Result<vfio_device_info> {
+        let mut dev_info = vfio_device_info {
+            argsz: mem::size_of::<vfio_device_info>() as u32,
+            flags: 0,
+            num_regions: 0,
+            num_irqs: 0,
+            cap_offset: 0,
+            pad: 0,
+        };
+        vfio_syscall::get_device_info(device, &mut dev_info)?;
+        match VfioDeviceInfo::get_device_type(&dev_info.flags) {
+            VFIO_DEVICE_FLAGS_PLATFORM => {}
+            VFIO_DEVICE_FLAGS_PCI => {
+                if dev_info.num_regions < VFIO_PCI_CONFIG_REGION_INDEX + 1
+                    || dev_info.num_irqs < VFIO_PCI_MSIX_IRQ_INDEX + 1
+                {
+                    return Err(VfioError::VfioDeviceGetInfoPCI);
+                }
+            }
+            _ => {
+                return Err(VfioError::VfioDeviceGetInfoOther);
+            }
+        }
+
+        Ok(dev_info)
+    }
+
     fn new(device: File, dev_info: &vfio_device_info) -> Self {
         VfioDeviceInfo {
             device,
@@ -1586,18 +1591,18 @@ mod tests {
     #[test]
     fn test_get_device_type() {
         let flags: u32 = VFIO_DEVICE_FLAGS_PCI;
-        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+        assert_eq!(flags, VfioDeviceInfo::get_device_type(&flags));
 
         let flags: u32 = VFIO_DEVICE_FLAGS_PLATFORM;
-        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+        assert_eq!(flags, VfioDeviceInfo::get_device_type(&flags));
 
         let flags: u32 = VFIO_DEVICE_FLAGS_AMBA;
-        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+        assert_eq!(flags, VfioDeviceInfo::get_device_type(&flags));
 
         let flags: u32 = VFIO_DEVICE_FLAGS_CCW;
-        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+        assert_eq!(flags, VfioDeviceInfo::get_device_type(&flags));
 
         let flags: u32 = VFIO_DEVICE_FLAGS_AP;
-        assert_eq!(flags, VfioGroup::get_device_type(&flags));
+        assert_eq!(flags, VfioDeviceInfo::get_device_type(&flags));
     }
 }

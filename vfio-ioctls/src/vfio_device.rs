@@ -149,6 +149,57 @@ impl vfio_region_info_with_cap {
     }
 }
 
+struct VfioCommon {
+    #[allow(dead_code)]
+    device_fd: Option<VfioContainerDeviceHandle>,
+}
+
+impl VfioCommon {
+    #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
+    fn device_set_fd(&self, dev_fd: RawFd, add: bool) -> Result<()> {
+        let dev_fd_ptr = &dev_fd as *const i32;
+
+        if let Some(device_fd) = self.device_fd.as_ref() {
+            match &device_fd.0 {
+                #[cfg(feature = "kvm")]
+                DeviceFdInner::Kvm(fd) => {
+                    let flag = if add {
+                        KVM_DEV_VFIO_FILE_ADD
+                    } else {
+                        KVM_DEV_VFIO_FILE_DEL
+                    };
+                    let dev_attr = kvm_device_attr {
+                        flags: 0,
+                        group: KVM_DEV_VFIO_FILE,
+                        attr: u64::from(flag),
+                        addr: dev_fd_ptr as u64,
+                    };
+                    fd.set_device_attr(&dev_attr)
+                        .map_err(|e| VfioError::SetDeviceAttr(Error::new(e.errno())))
+                }
+                #[cfg(feature = "mshv")]
+                DeviceFdInner::Mshv(fd) => {
+                    let flag = if add {
+                        MSHV_DEV_VFIO_FILE_ADD
+                    } else {
+                        MSHV_DEV_VFIO_FILE_DEL
+                    };
+                    let dev_attr = mshv_device_attr {
+                        flags: 0,
+                        group: MSHV_DEV_VFIO_FILE,
+                        attr: u64::from(flag),
+                        addr: dev_fd_ptr as u64,
+                    };
+                    fd.set_device_attr(&dev_attr)
+                        .map_err(|e| VfioError::SetDeviceAttr(Error::new(e.errno())))
+                }
+            }
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// A safe wrapper over a VFIO container object.
 ///
 /// A VFIO container represents an IOMMU domain, or a set of IO virtual address translation tables.
@@ -161,9 +212,9 @@ impl vfio_region_info_with_cap {
 /// address translation mapping tables.
 pub struct VfioContainer {
     pub(crate) container: File,
-    #[allow(dead_code)]
-    pub(crate) device_fd: Option<VfioContainerDeviceHandle>,
     pub(crate) groups: Mutex<HashMap<u32, Arc<VfioGroup>>>,
+    #[allow(dead_code)]
+    common: VfioCommon,
 }
 
 impl VfioContainer {
@@ -180,7 +231,7 @@ impl VfioContainer {
 
         let container = VfioContainer {
             container,
-            device_fd,
+            common: VfioCommon { device_fd },
             groups: Mutex::new(HashMap::new()),
         };
         container.check_api_version()?;
@@ -346,50 +397,6 @@ impl VfioContainer {
         })
     }
 
-    #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
-    fn device_set_fd(&self, dev_fd: RawFd, add: bool) -> Result<()> {
-        let dev_fd_ptr = &dev_fd as *const i32;
-
-        if let Some(device_fd) = self.device_fd.as_ref() {
-            match &device_fd.0 {
-                #[cfg(feature = "kvm")]
-                DeviceFdInner::Kvm(fd) => {
-                    let flag = if add {
-                        KVM_DEV_VFIO_FILE_ADD
-                    } else {
-                        KVM_DEV_VFIO_FILE_DEL
-                    };
-                    let dev_attr = kvm_device_attr {
-                        flags: 0,
-                        group: KVM_DEV_VFIO_FILE,
-                        attr: u64::from(flag),
-                        addr: dev_fd_ptr as u64,
-                    };
-                    fd.set_device_attr(&dev_attr)
-                        .map_err(|e| VfioError::SetDeviceAttr(Error::new(e.errno())))
-                }
-                #[cfg(feature = "mshv")]
-                DeviceFdInner::Mshv(fd) => {
-                    let flag = if add {
-                        MSHV_DEV_VFIO_FILE_ADD
-                    } else {
-                        MSHV_DEV_VFIO_FILE_DEL
-                    };
-                    let dev_attr = mshv_device_attr {
-                        flags: 0,
-                        group: MSHV_DEV_VFIO_FILE,
-                        attr: u64::from(flag),
-                        addr: dev_fd_ptr as u64,
-                    };
-                    fd.set_device_attr(&dev_attr)
-                        .map_err(|e| VfioError::SetDeviceAttr(Error::new(e.errno())))
-                }
-            }
-        } else {
-            Ok(())
-        }
-    }
-
     /// Add a device to a VFIO group
     ///
     /// The VFIO device fd should have been set.
@@ -398,7 +405,7 @@ impl VfioContainer {
     /// * group: target VFIO group
     #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
     fn device_add_group(&self, group: &VfioGroup) -> Result<()> {
-        self.device_set_fd(group.as_raw_fd(), true)
+        self.common.device_set_fd(group.as_raw_fd(), true)
     }
 
     /// Delete a device from a VFIO group
@@ -409,7 +416,7 @@ impl VfioContainer {
     /// * group: target VFIO group
     #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
     fn device_del_group(&self, group: &VfioGroup) -> Result<()> {
-        self.device_set_fd(group.as_raw_fd(), false)
+        self.common.device_set_fd(group.as_raw_fd(), false)
     }
 
     #[cfg(test)]
@@ -1328,7 +1335,7 @@ mod tests {
 
         VfioContainer {
             container,
-            device_fd: None,
+            common: VfioCommon { device_fd: None },
             groups: Mutex::new(HashMap::new()),
         }
     }

@@ -3,6 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 OR BSD-3-Clause
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
@@ -146,6 +147,39 @@ impl vfio_region_info_with_cap {
         region_with_cap[0].region_info.offset = 0;
 
         region_with_cap
+    }
+}
+/// Trait to define common operations exposed to user-space drivers for
+/// VFIO device wrappers that are either backed by a legacy VfioContainer or
+/// a VFIO cdev device using iommufd.
+pub trait VfioOps: Any + Send + Sync {
+    /// Map a region of user space memory (e.g. guest memory) into an IO
+    /// address space managed by IOMMU hardware to enable DMA for
+    /// associated VFIO devices
+    ///
+    /// # Parameters
+    /// * iova: IO virtual address to map the memory.
+    /// * size: size of the memory region.
+    /// * user_addr: user space address (e.g. host virtual address) for
+    ///   the guest memory region to map.
+    fn vfio_dma_map(&self, _iova: u64, _size: u64, _user_addr: u64) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Unmap a region of user space memory (e.g. guest memory) from an IO
+    /// address space managed by IOMMU hardware to disable DMA for
+    /// associated VFIO devices
+    ///
+    /// # Parameters
+    /// * iova: IO virtual address to unmap the memory.
+    /// * size: size of the memory region.
+    fn vfio_dma_unmap(&self, _iova: u64, _size: u64) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Downcast to the underlying vfio wrapper type
+    fn as_any(&self) -> &dyn Any {
+        unimplemented!()
     }
 }
 
@@ -327,7 +361,9 @@ impl VfioContainer {
         }
     }
 
-    /// Map a region of guest memory regions into the vfio container's iommu table.
+    /// Map a region of user space memory (e.g. guest memory) into an IO
+    /// address space managed by IOMMU hardware to enable DMA for
+    /// associated VFIO devices
     ///
     /// # Parameters
     /// * iova: IO virtual address to mapping the memory.
@@ -345,10 +381,12 @@ impl VfioContainer {
         vfio_syscall::map_dma(self, &dma_map)
     }
 
-    /// Unmap a region of guest memory regions into the vfio container's iommu table.
+    /// Unmap a region of user space memory (e.g. guest memory) from an IO
+    /// address space managed by IOMMU hardware to disable DMA for
+    /// associated VFIO devices
     ///
     /// # Parameters
-    /// * iova: IO virtual address to mapping the memory.
+    /// * iova: IO virtual address to unmap the memory.
     /// * size: size of the memory region.
     pub fn vfio_dma_unmap(&self, iova: u64, size: u64) -> Result<()> {
         let mut dma_unmap = vfio_iommu_type1_dma_unmap {
@@ -433,6 +471,20 @@ impl VfioContainer {
 impl AsRawFd for VfioContainer {
     fn as_raw_fd(&self) -> RawFd {
         self.container.as_raw_fd()
+    }
+}
+
+impl VfioOps for VfioContainer {
+    fn vfio_dma_map(&self, iova: u64, size: u64, user_addr: u64) -> Result<()> {
+        self.vfio_dma_map(iova, size, user_addr)
+    }
+
+    fn vfio_dma_unmap(&self, iova: u64, size: u64) -> Result<()> {
+        self.vfio_dma_unmap(iova, size)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

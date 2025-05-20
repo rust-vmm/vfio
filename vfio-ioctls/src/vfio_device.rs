@@ -25,7 +25,7 @@ use crate::vfio_ioctls::*;
 use crate::{Result, VfioError};
 #[cfg(all(feature = "kvm", not(test)))]
 use kvm_bindings::{
-    kvm_device_attr, KVM_DEV_VFIO_GROUP, KVM_DEV_VFIO_GROUP_ADD, KVM_DEV_VFIO_GROUP_DEL,
+    kvm_device_attr, KVM_DEV_VFIO_FILE, KVM_DEV_VFIO_FILE_ADD, KVM_DEV_VFIO_FILE_DEL,
 };
 #[cfg(all(feature = "kvm", not(test)))]
 use kvm_ioctls::DeviceFd as KvmDeviceFd;
@@ -347,23 +347,23 @@ impl VfioContainer {
     }
 
     #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
-    fn device_set_group(&self, group: &VfioGroup, add: bool) -> Result<()> {
-        let group_fd_ptr = &group.as_raw_fd() as *const i32;
+    fn device_set_fd(&self, dev_fd: RawFd, add: bool) -> Result<()> {
+        let dev_fd_ptr = &dev_fd as *const i32;
 
         if let Some(device_fd) = self.device_fd.as_ref() {
             match &device_fd.0 {
                 #[cfg(feature = "kvm")]
                 DeviceFdInner::Kvm(fd) => {
                     let flag = if add {
-                        KVM_DEV_VFIO_GROUP_ADD
+                        KVM_DEV_VFIO_FILE_ADD
                     } else {
-                        KVM_DEV_VFIO_GROUP_DEL
+                        KVM_DEV_VFIO_FILE_DEL
                     };
                     let dev_attr = kvm_device_attr {
                         flags: 0,
-                        group: KVM_DEV_VFIO_GROUP,
+                        group: KVM_DEV_VFIO_FILE,
                         attr: u64::from(flag),
-                        addr: group_fd_ptr as u64,
+                        addr: dev_fd_ptr as u64,
                     };
                     fd.set_device_attr(&dev_attr)
                         .map_err(|e| VfioError::SetDeviceAttr(Error::new(e.errno())))
@@ -379,7 +379,7 @@ impl VfioContainer {
                         flags: 0,
                         group: MSHV_DEV_VFIO_FILE,
                         attr: u64::from(flag),
-                        addr: group_fd_ptr as u64,
+                        addr: dev_fd_ptr as u64,
                     };
                     fd.set_device_attr(&dev_attr)
                         .map_err(|e| VfioError::SetDeviceAttr(Error::new(e.errno())))
@@ -398,7 +398,7 @@ impl VfioContainer {
     /// * group: target VFIO group
     #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
     fn device_add_group(&self, group: &VfioGroup) -> Result<()> {
-        self.device_set_group(group, true)
+        self.device_set_fd(group.as_raw_fd(), true)
     }
 
     /// Delete a device from a VFIO group
@@ -409,7 +409,7 @@ impl VfioContainer {
     /// * group: target VFIO group
     #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
     fn device_del_group(&self, group: &VfioGroup) -> Result<()> {
-        self.device_set_group(group, false)
+        self.device_set_fd(group.as_raw_fd(), false)
     }
 
     #[cfg(test)]

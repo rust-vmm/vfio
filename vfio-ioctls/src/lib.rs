@@ -137,6 +137,8 @@ pub enum VfioError {
     GetHostAddress,
     #[error("invalid dma unmap size")]
     InvalidDmaUnmapSize,
+    #[error("failed to downcast VfioOps")]
+    DowncastVfioOps,
 }
 
 /// Specialized version of `Result` for VFIO subsystem.

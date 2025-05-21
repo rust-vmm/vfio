@@ -10,9 +10,7 @@ use std::fs::{File, OpenOptions};
 use std::mem::{self, ManuallyDrop};
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::prelude::FileExt;
-use std::path::Path;
-#[cfg(not(test))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use byteorder::{ByteOrder, NativeEndian};
@@ -341,10 +339,9 @@ impl VfioContainer {
 
         // Clean up the group when the last user releases reference to the group, three reference
         // count for:
-        // - one reference held by the last device object
         // - one reference cloned in VfioDevice.drop() and passed into here
         // - one reference held by the groups hashmap
-        if Arc::strong_count(&group) == 3 {
+        if Arc::strong_count(&group) == 2 {
             #[cfg(any(feature = "kvm", feature = "mshv"))]
             match self.device_del_group(&group) {
                 Ok(_) => {}
@@ -891,8 +888,8 @@ pub struct VfioDevice {
     pub(crate) flags: u32,
     pub(crate) regions: Vec<VfioRegion>,
     pub(crate) irqs: HashMap<u32, VfioIrq>,
-    pub(crate) group: Arc<VfioGroup>,
-    pub(crate) container: Arc<VfioContainer>,
+    pub(crate) sysfspath: PathBuf,
+    pub(crate) vfio_ops: Arc<dyn VfioOps>,
 }
 
 impl VfioDevice {
@@ -910,11 +907,17 @@ impl VfioDevice {
     ///
     /// # Parameters
     /// * `sysfspath`: specify the vfio device path in sys file system.
-    /// * `container`: the new VFIO device object will bind to this container object.
-    pub fn new(sysfspath: &Path, container: Arc<VfioContainer>) -> Result<Self> {
-        let group_id = Self::get_group_id_from_path(sysfspath)?;
-        let group = container.get_group(group_id)?;
-        let device_info = group.get_device(sysfspath)?;
+    /// * `vfio_ops`: the vfio device wrapper object that the new VFIO device object will bind to.
+    pub fn new(sysfspath: &Path, vfio_ops: Arc<dyn VfioOps>) -> Result<Self> {
+        let device_info =
+            if let Some(vfio_container) = vfio_ops.as_any().downcast_ref::<VfioContainer>() {
+                let group_id = Self::get_group_id_from_path(sysfspath)?;
+                let group = vfio_container.get_group(group_id)?;
+                group.get_device(sysfspath)?
+            } else {
+                return Err(VfioError::DowncastVfioOps);
+            };
+
         let regions = device_info.get_regions()?;
         let irqs = device_info.get_irqs()?;
 
@@ -923,8 +926,8 @@ impl VfioDevice {
             flags: device_info.flags,
             regions,
             irqs,
-            group,
-            container,
+            sysfspath: sysfspath.to_path_buf(),
+            vfio_ops,
         })
     }
 
@@ -1278,12 +1281,16 @@ impl Drop for VfioDevice {
         // ManuallyDrop is needed here because we need to ensure that VfioDevice::device is closed
         // before dropping VfioDevice::group, otherwise it will cause EBUSY when putting the
         // group object.
+        if let Some(container) = self.vfio_ops.as_any().downcast_ref::<VfioContainer>() {
+            // SAFETY: we own the File object.
+            unsafe {
+                ManuallyDrop::drop(&mut self.device);
+            }
 
-        // SAFETY: we own the File object.
-        unsafe {
-            ManuallyDrop::drop(&mut self.device);
+            let group_id = Self::get_group_id_from_path(&self.sysfspath).unwrap();
+            let group = container.get_group(group_id).unwrap();
+            container.put_group(group);
         }
-        self.container.put_group(self.group.clone());
     }
 }
 
@@ -1423,7 +1430,8 @@ mod tests {
         container.put_group(group4);
         assert_eq!(Arc::strong_count(&group), 3);
         container.put_group(group3);
-        assert_eq!(Arc::strong_count(&group), 1);
+        assert_eq!(Arc::strong_count(&group), 2);
+        container.put_group(group);
 
         container.vfio_dma_map(0x1000, 0x1000, 0x8000).unwrap();
         container.vfio_dma_map(0x2000, 0x2000, 0x8000).unwrap_err();

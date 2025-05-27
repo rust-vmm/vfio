@@ -264,7 +264,7 @@ impl VfioContainer {
             match self.device_del_group(&group) {
                 Ok(_) => {}
                 Err(e) => {
-                    error!("Could not delete VFIO group: {:?}", e);
+                    error!("Could not delete VFIO group: {e:?}");
                     return;
                 }
             }
@@ -628,7 +628,7 @@ impl VfioDeviceInfo {
             };
 
             if vfio_syscall::get_device_irq_info(self, &mut irq_info).is_err() {
-                warn!("Could not get VFIO IRQ info for index {:}", index);
+                warn!("Could not get VFIO IRQ info for index {index:}");
                 continue;
             }
 
@@ -638,7 +638,7 @@ impl VfioDeviceInfo {
                 count: irq_info.count,
             };
 
-            debug!("IRQ #{}", index);
+            debug!("IRQ #{index}");
             debug!("\tflag 0x{:x}", irq.flags);
             debug!("\tindex {}", irq.index);
             debug!("\tcount {}", irq.count);
@@ -780,7 +780,7 @@ impl VfioDeviceInfo {
                         continue;
                     }
                     _ => {
-                        error!("Could not get region #{} info {}", i, e);
+                        error!("Could not get region #{i} info {e}");
                         continue;
                     }
                 }
@@ -793,11 +793,11 @@ impl VfioDeviceInfo {
                 caps: Vec::new(),
             };
             if let Err(e) = self.get_region_map(&mut region, &reg_info) {
-                error!("Could not get region #{} map {}", i, e);
+                error!("Could not get region #{i} map {e}");
                 continue;
             }
 
-            debug!("Region #{}", i);
+            debug!("Region #{i}");
             debug!("\tflag 0x{:x}", region.flags);
             debug!("\tsize 0x{:x}", region.size);
             debug!("\toffset 0x{:x}", region.offset);
@@ -1104,7 +1104,7 @@ impl VfioDevice {
         match self.regions.get(index as usize) {
             Some(v) => v.size,
             None => {
-                warn!("get_region_size with invalid index: {}", index);
+                warn!("get_region_size with invalid index: {index}");
                 0
             }
         }
@@ -1118,7 +1118,7 @@ impl VfioDevice {
         match self.regions.get(index as usize) {
             Some(v) => v.caps.clone(),
             None => {
-                warn!("get_region_caps with invalid index: {}", index);
+                warn!("get_region_caps with invalid index: {index}");
                 Vec::new()
             }
         }
@@ -1134,25 +1134,19 @@ impl VfioDevice {
         let region: &VfioRegion = match self.regions.get(index as usize) {
             Some(v) => v,
             None => {
-                warn!("region read with invalid index: {}", index);
+                warn!("region read with invalid index: {index}");
                 return;
             }
         };
 
         let size = buf.len() as u64;
         if size > region.size || addr + size > region.size {
-            warn!(
-                "region read with invalid parameter, add: {}, size: {}",
-                addr, size
-            );
+            warn!("region read with invalid parameter, add: {addr}, size: {size}");
             return;
         }
 
         if let Err(e) = self.device.read_exact_at(buf, region.offset + addr) {
-            warn!(
-                "Failed to read region in index: {}, addr: {}, error: {}",
-                index, addr, e
-            );
+            warn!("Failed to read region in index: {index}, addr: {addr}, error: {e}");
         }
     }
 
@@ -1166,7 +1160,7 @@ impl VfioDevice {
         let stub: &VfioRegion = match self.regions.get(index as usize) {
             Some(v) => v,
             None => {
-                warn!("region write with invalid index: {}", index);
+                warn!("region write with invalid index: {index}");
                 return;
             }
         };
@@ -1176,18 +1170,12 @@ impl VfioDevice {
             || addr + size > stub.size
             || (stub.flags & VFIO_REGION_INFO_FLAG_WRITE) == 0
         {
-            warn!(
-                "region write with invalid parameter, add: {}, size: {}",
-                addr, size
-            );
+            warn!("region write with invalid parameter, add: {addr}, size: {size}");
             return;
         }
 
         if let Err(e) = self.device.write_all_at(buf, stub.offset + addr) {
-            warn!(
-                "Failed to write region in index: {}, addr: {}, error: {}",
-                index, addr, e
-            );
+            warn!("Failed to write region in index: {index}, addr: {addr}, error: {e}");
         }
     }
 

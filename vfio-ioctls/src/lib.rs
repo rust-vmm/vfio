@@ -151,7 +151,7 @@ mod tests {
     fn test_vfio_error_fmt() {
         let e = VfioError::GetGroupStatus;
         let e2 = VfioError::OpenContainer(std::io::Error::from(std::io::ErrorKind::Other));
-        let str = format!("{}", e);
+        let str = format!("{e}");
 
         assert_eq!(&str, "failed to get Group Status");
         assert!(e2.source().is_some());

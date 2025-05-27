@@ -37,7 +37,7 @@ use mshv_bindings::{
 use mshv_ioctls::DeviceFd as MshvDeviceFd;
 #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
 use std::os::unix::io::FromRawFd;
-#[cfg(all(feature = "mshv", not(test)))]
+#[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
 use vmm_sys_util::errno::Error;
 
 #[derive(Debug)]
@@ -365,7 +365,7 @@ impl VfioContainer {
                         addr: group_fd_ptr as u64,
                     };
                     fd.set_device_attr(&dev_attr)
-                        .map_err(VfioError::SetDeviceAttr)
+                        .map_err(|e| VfioError::SetDeviceAttr(Error::new(e.errno())))
                 }
                 #[cfg(feature = "mshv")]
                 DeviceFdInner::Mshv(fd) => {

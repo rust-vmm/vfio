@@ -329,7 +329,7 @@ impl Client {
             major: 0,
             minor: 1,
         };
-        debug!("Command: {:?}", version);
+        debug!("Command: {version:?}");
 
         let version_data = CString::new(version_data.as_bytes()).unwrap();
         let bufs = vec![
@@ -355,7 +355,7 @@ impl Client {
             .read_exact(server_version.as_mut_slice())
             .map_err(Error::StreamRead)?;
 
-        debug!("Reply: {:?}", server_version);
+        debug!("Reply: {server_version:?}");
 
         let mut server_version_data =
             vec![0; server_version.header.message_size as usize - size_of::<Version>()];
@@ -396,7 +396,7 @@ impl Client {
             address,
             size,
         };
-        debug!("Command: {:?}", dma_map);
+        debug!("Command: {dma_map:?}");
         self.next_message_id += Wrapping(1);
         self.stream
             .send_with_fd(dma_map.as_slice(), fd)
@@ -406,7 +406,7 @@ impl Client {
         self.stream
             .read_exact(reply.as_mut_slice())
             .map_err(Error::StreamRead)?;
-        debug!("Reply: {:?}", reply);
+        debug!("Reply: {reply:?}");
 
         Ok(())
     }
@@ -425,7 +425,7 @@ impl Client {
             address,
             size,
         };
-        debug!("Command: {:?}", dma_unmap);
+        debug!("Command: {dma_unmap:?}");
         self.next_message_id += Wrapping(1);
         self.stream
             .write_all(dma_unmap.as_slice())
@@ -435,7 +435,7 @@ impl Client {
         self.stream
             .read_exact(reply.as_mut_slice())
             .map_err(Error::StreamRead)?;
-        debug!("Reply: {:?}", reply);
+        debug!("Reply: {reply:?}");
 
         Ok(())
     }
@@ -450,7 +450,7 @@ impl Client {
                 ..Default::default()
             },
         };
-        debug!("Command: {:?}", reset);
+        debug!("Command: {reset:?}");
         self.next_message_id += Wrapping(1);
         self.stream
             .write_all(reset.as_slice())
@@ -460,7 +460,7 @@ impl Client {
         self.stream
             .read_exact(reply.as_mut_slice())
             .map_err(Error::StreamRead)?;
-        debug!("Reply: {:?}", reply);
+        debug!("Reply: {reply:?}");
 
         Ok(())
     }
@@ -477,7 +477,7 @@ impl Client {
             argsz: size_of::<DeviceGetInfo>() as u32,
             ..Default::default()
         };
-        debug!("Command: {:?}", get_info);
+        debug!("Command: {get_info:?}");
         self.next_message_id += Wrapping(1);
 
         self.stream
@@ -488,7 +488,7 @@ impl Client {
         self.stream
             .read_exact(reply.as_mut_slice())
             .map_err(Error::StreamRead)?;
-        debug!("Reply: {:?}", reply);
+        debug!("Reply: {reply:?}");
         self.num_irqs = reply.num_irqs;
 
         if reply.flags & VFIO_DEVICE_FLAGS_PCI != VFIO_DEVICE_FLAGS_PCI {
@@ -539,7 +539,7 @@ impl Client {
                 ..Default::default()
             },
         };
-        debug!("Command: {:?}", get_region_info);
+        debug!("Command: {get_region_info:?}");
         self.next_message_id += Wrapping(1);
 
         self.stream
@@ -551,12 +551,12 @@ impl Client {
             .stream
             .recv_with_fd(reply.as_mut_slice())
             .map_err(Error::ReceiveWithFd)?;
-        debug!("Reply: {:?}", reply);
+        debug!("Reply: {reply:?}");
 
         // Retrieve the region info again with capabilities if needed
         if reply.region_info.argsz > std::mem::size_of::<vfio_region_info>() as u32 {
             get_region_info.region_info.argsz = reply.region_info.argsz;
-            debug!("Command: {:?}", get_region_info);
+            debug!("Command: {get_region_info:?}");
             self.next_message_id += Wrapping(1);
 
             self.stream
@@ -568,7 +568,7 @@ impl Client {
                 .stream
                 .recv_with_fd(reply.as_mut_slice())
                 .map_err(Error::ReceiveWithFd)?;
-            debug!("Reply: {:?}", reply);
+            debug!("Reply: {reply:?}");
 
             let cap_size = reply.region_info.argsz - std::mem::size_of::<vfio_region_info>() as u32;
             assert_eq!(
@@ -608,8 +608,7 @@ impl Client {
             if cap_offset + cap_header_size > cap_size {
                 warn!(
                     "Unexpected end of cap data: 'cap_offset + cap_header_size > cap_size' \
-                cap_offset = {}, cap_header_size = {}, cap_size = {}",
-                    cap_offset, cap_header_size, cap_size
+                cap_offset = {cap_offset}, cap_header_size = {cap_header_size}, cap_size = {cap_size}"
                 );
                 break;
             }
@@ -623,8 +622,7 @@ impl Client {
                     if cap_offset + mmap_cap_size > cap_size {
                         warn!(
                             "Unexpected end of cap data: 'cap_offset + mmap_cap_size > cap_size' \
-                        cap_offset = {}, mmap_cap_size = {}, cap_size = {}",
-                            cap_offset, mmap_cap_size, cap_size
+                        cap_offset = {cap_offset}, mmap_cap_size = {mmap_cap_size}, cap_size = {cap_size}"
                         );
                         break;
                     }
@@ -636,8 +634,7 @@ impl Client {
                     let area_num = sparse_mmap.nr_areas;
                     if cap_offset + mmap_cap_size + area_num * mmap_area_size > cap_size {
                         warn!("Unexpected end of cap data: 'cap_offset + mmap_cap_size + area_num * mmap_area_size > cap_size' \
-                        cap_offset = {}, mmap_cap_size = {}, area_num = {}, mmap_area_size = {}, cap_size = {}",
-                        cap_offset, mmap_cap_size, area_num, mmap_area_size, cap_size);
+                        cap_offset = {cap_offset}, mmap_cap_size = {mmap_area_size}, area_num = {area_num}, mmap_area_size = {mmap_area_size}, cap_size = {cap_size}");
                         break;
                     }
                     let areas =
@@ -673,7 +670,7 @@ impl Client {
             count: data.len() as u32,
             region,
         };
-        debug!("Command: {:?}", region_read);
+        debug!("Command: {region_read:?}");
         self.next_message_id += Wrapping(1);
         self.stream
             .write_all(region_read.as_slice())
@@ -683,7 +680,7 @@ impl Client {
         self.stream
             .read_exact(reply.as_mut_slice())
             .map_err(Error::StreamRead)?;
-        debug!("Reply: {:?}", reply);
+        debug!("Reply: {reply:?}");
         self.stream.read_exact(data).map_err(Error::StreamRead)?;
         Ok(())
     }
@@ -701,7 +698,7 @@ impl Client {
             count: data.len() as u32,
             region,
         };
-        debug!("Command: {:?}", region_write);
+        debug!("Command: {region_write:?}");
         self.next_message_id += Wrapping(1);
 
         let bufs = vec![IoSlice::new(region_write.as_slice()), IoSlice::new(data)];
@@ -716,7 +713,7 @@ impl Client {
         self.stream
             .read_exact(reply.as_mut_slice())
             .map_err(Error::StreamRead)?;
-        debug!("Reply: {:?}", reply);
+        debug!("Reply: {reply:?}");
         Ok(())
     }
 
@@ -734,7 +731,7 @@ impl Client {
             index,
             count: 0,
         };
-        debug!("Command: {:?}", get_irq_info);
+        debug!("Command: {get_irq_info:?}");
         self.next_message_id += Wrapping(1);
 
         self.stream
@@ -745,7 +742,7 @@ impl Client {
         self.stream
             .read_exact(reply.as_mut_slice())
             .map_err(Error::StreamRead)?;
-        debug!("Reply: {:?}", reply);
+        debug!("Reply: {reply:?}");
 
         Ok(IrqInfo {
             index: reply.index,
@@ -776,7 +773,7 @@ impl Client {
             index,
             count,
         };
-        debug!("Command: {:?}", set_irqs);
+        debug!("Command: {set_irqs:?}");
         self.next_message_id += Wrapping(1);
 
         self.stream
@@ -787,7 +784,7 @@ impl Client {
         self.stream
             .read_exact(reply.as_mut_slice())
             .map_err(Error::StreamRead)?;
-        debug!("Reply: {:?}", reply);
+        debug!("Reply: {reply:?}");
 
         Ok(())
     }

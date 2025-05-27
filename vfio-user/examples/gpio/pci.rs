@@ -404,14 +404,14 @@ impl PciConfiguration {
     /// Writes a 32bit dword to `offset`. `offset` must be 32bit aligned.
     fn write_dword(&mut self, offset: usize, value: u32) {
         if offset % 4 != 0 {
-            warn!("bad PCI config dword write offset {}", offset);
+            warn!("bad PCI config dword write offset {offset}");
             return;
         }
         let reg_idx = offset / 4;
         if let Some(r) = self.registers.get_mut(reg_idx) {
             *r = (*r & !self.writable_bits[reg_idx]) | (value & self.writable_bits[reg_idx]);
         } else {
-            warn!("bad PCI dword write {}", offset);
+            warn!("bad PCI dword write {offset}");
         }
     }
 
@@ -421,7 +421,7 @@ impl PciConfiguration {
             0 => 0,
             2 => 16,
             _ => {
-                warn!("bad PCI config word write offset {}", offset);
+                warn!("bad PCI config word write offset {offset}");
                 return;
             }
         };
@@ -433,7 +433,7 @@ impl PciConfiguration {
             let shifted_value = (u32::from(value) << shift) & writable_mask;
             *r = *r & !mask | shifted_value;
         } else {
-            warn!("bad PCI config word write offset {}", offset);
+            warn!("bad PCI config word write offset {offset}");
         }
     }
 
@@ -457,7 +457,7 @@ impl PciConfiguration {
             let shifted_value = (u32::from(value) << shift) & writable_mask;
             *r = *r & !mask | shifted_value;
         } else {
-            warn!("bad PCI config byte write offset {}", offset);
+            warn!("bad PCI config byte write offset {offset}");
         }
     }
 

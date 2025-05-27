@@ -20,7 +20,7 @@ serde_json = "1.0.93"
 thiserror = "2.0.12"
 vfio-bindings = { version = "0.4.0", path = "../vfio-bindings", features = ["fam-wrappers"] }
 vm-memory = { version = "0.16.0", features = ["backend-mmap", "backend-atomic"] }
-vmm-sys-util = "0.14.0"
+vmm-sys-util = { workspace = true }
 
 [dev-dependencies]
 argh = "0.1.9"

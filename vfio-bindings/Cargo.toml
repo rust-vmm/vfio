@@ -17,7 +17,7 @@ vfio-v5_0_0 = []
 fam-wrappers = ["vmm-sys-util"]
 
 [dependencies]
-vmm-sys-util = { version = "0.14.0", optional = true }
+vmm-sys-util = { workspace = true, optional = true }
 
 [dev-dependencies]
 byteorder = "1.2.1"

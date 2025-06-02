@@ -17,7 +17,7 @@ log = "0.4.17"
 serde = { version = "1.0.151", features = ["rc"] }
 serde_derive = "1.0.149"
 serde_json = "1.0.93"
-thiserror = "2.0.12"
+thiserror = { workspace = true }
 vfio-bindings = { version = "0.4.0", path = "../vfio-bindings", features = [
   "fam-wrappers",
 ] }

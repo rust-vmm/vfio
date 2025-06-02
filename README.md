@@ -21,6 +21,7 @@ While the group is the minimum granularity that must be used to ensure secure us
 This repository provides two crates to use the VFIO framework, please refer to crate documentations for detail information.
 - [vfio-bindings](./vfio-bindings): a rust FFI bindings to VFIO generated using [bindgen](https://crates.io/crates/bindgen).
 - [vfio-ioctls](./vfio-ioctls): a group of safe wrappers over the [VFIO APIs](https://github.com/torvalds/linux/blob/master/include/uapi/linux/vfio.h).
+- [vfio-user](./vfio-user): a group of safe wrappers to implement [vfio-user devices](https://github.com/nutanix/libvfio-user/blob/master/docs/vfio-user.rst).
 
 ## License
 

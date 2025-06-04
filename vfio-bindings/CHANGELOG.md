@@ -1,3 +1,14 @@
+# [v0.5.0]
+
+## Fixed
+
+- [[85]](https://github.com/rust-vmm/vfio/pull/85) Fix file permissions
+
+## Changed
+
+- [[86]](https://github.com/rust-vmm/vfio/pull/86) Upgrade vmm sys utils to v0.14.0
+- [[91]](https://github.com/rust-vmm/vfio/pull/91) vfio-bindings: Regenerate bindings using new bindgen-cli
+
 # [v0.4.0]
 
 ## Added

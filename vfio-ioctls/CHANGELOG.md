@@ -1,3 +1,11 @@
+# [v0.5.0]
+
+## Changed
+
+- [[86]](https://github.com/rust-vmm/vfio/pull/86) Upgrade vmm sys utils to v0.14.0
+- [[87]](https://github.com/rust-vmm/vfio/pull/87) vfio-ioctls: Upgrade kvm-ioctl & kvm-bindings crates
+- [[88]](https://github.com/rust-vmm/vfio/pull/88) Bump thiserror to latest version
+
 # [v0.4.0]
 
 ## Added

@@ -61,7 +61,7 @@ pub const VFIO_EEH: u32 = 5;
 pub const VFIO_TYPE1_NESTING_IOMMU: u32 = 6;
 pub const VFIO_SPAPR_TCE_v2_IOMMU: u32 = 7;
 pub const VFIO_NOIOMMU_IOMMU: u32 = 8;
-pub const VFIO_TYPE: u32 = 59;
+pub const VFIO_TYPE: u8 = 59u8;
 pub const VFIO_BASE: u32 = 100;
 pub const VFIO_GROUP_FLAGS_VIABLE: u32 = 1;
 pub const VFIO_GROUP_FLAGS_CONTAINER_SET: u32 = 2;
@@ -598,6 +598,11 @@ impl Default for vfio_device_gfx_plane_info__bindgen_ty_1 {
         }
     }
 }
+impl ::std::fmt::Debug for vfio_device_gfx_plane_info__bindgen_ty_1 {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write!(f, "vfio_device_gfx_plane_info__bindgen_ty_1 {{ union }}")
+    }
+}
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of vfio_device_gfx_plane_info"]
@@ -638,6 +643,11 @@ impl Default for vfio_device_gfx_plane_info {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
         }
+    }
+}
+impl ::std::fmt::Debug for vfio_device_gfx_plane_info {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write ! (f , "vfio_device_gfx_plane_info {{ argsz: {:?}, flags: {:?}, drm_plane_type: {:?}, drm_format: {:?}, drm_format_mod: {:?}, width: {:?}, height: {:?}, stride: {:?}, size: {:?}, x_pos: {:?}, y_pos: {:?}, x_hot: {:?}, y_hot: {:?}, __bindgen_anon_1: {:?} }}" , self . argsz , self . flags , self . drm_plane_type , self . drm_format , self . drm_format_mod , self . width , self . height , self . stride , self . size , self . x_pos , self . y_pos , self . x_hot , self . y_hot , self . __bindgen_anon_1)
     }
 }
 #[doc = " VFIO_DEVICE_IOEVENTFD - _IOW(VFIO_TYPE, VFIO_BASE + 16,\n                              struct vfio_device_ioeventfd)\n\n Perform a write to the device at the specified device fd offset, with\n the specified data and width when the provided eventfd is triggered.\n vfio bus drivers may not support this for all regions, for all widths,\n or at all.  vfio-pci currently only enables support for BAR regions,\n excluding the MSI-X vector table.\n\n Return: 0 on success, -errno on failure."]
@@ -837,6 +847,11 @@ impl Default for vfio_eeh_pe_op__bindgen_ty_1 {
         }
     }
 }
+impl ::std::fmt::Debug for vfio_eeh_pe_op__bindgen_ty_1 {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write!(f, "vfio_eeh_pe_op__bindgen_ty_1 {{ union }}")
+    }
+}
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of vfio_eeh_pe_op"][::std::mem::size_of::<vfio_eeh_pe_op>() - 40usize];
@@ -854,6 +869,15 @@ impl Default for vfio_eeh_pe_op {
             ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
             s.assume_init()
         }
+    }
+}
+impl ::std::fmt::Debug for vfio_eeh_pe_op {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write!(
+            f,
+            "vfio_eeh_pe_op {{ argsz: {:?}, flags: {:?}, op: {:?}, __bindgen_anon_1: {:?} }}",
+            self.argsz, self.flags, self.op, self.__bindgen_anon_1
+        )
     }
 }
 #[doc = " VFIO_IOMMU_SPAPR_REGISTER_MEMORY - _IOW(VFIO_TYPE, VFIO_BASE + 17, struct vfio_iommu_spapr_register_memory)\n\n Registers user space memory where DMA is allowed. It pins\n user pages and does the locked memory accounting so\n subsequent VFIO_IOMMU_MAP_DMA/VFIO_IOMMU_UNMAP_DMA calls\n get faster."]

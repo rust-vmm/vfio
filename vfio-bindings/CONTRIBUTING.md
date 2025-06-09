@@ -4,10 +4,10 @@
 
 ### Bindgen
 The bindings are currently generated using
-[bindgen](https://crates.io/crates/bindgen):
+[bindgen](https://crates.io/crates/bindgen) version 0.71.1:
 
 ```bash
-cargo install bindgen
+cargo install bindgen-cli --vers 0.71.1
 ```
 
 ### Linux Kernel
@@ -45,8 +45,8 @@ git checkout v5.2
 make headers_install INSTALL_HDR_PATH=v5_2_headers
 cd v5_2_headers
 bindgen include/linux/vfio.h -o vfio.rs \
-    --with-derive-default \
-    --with-derive-partialeq \
+    --impl-debug --with-derive-default  \
+    --with-derive-partialeq  --impl-partialeq \
     -- -Iinclude
 
 cd ~
@@ -54,21 +54,6 @@ cd ~
 # Step 5: Copy the generated files to the new version module.
 cp linux/v5_2_headers/vfio.rs vfio-bindings/src/bindings_v5_2_0
 ```
-
-Once this is done, you need some modifications to the generated vfio.rs.
-First change below line:
-```rust
-pub const VFIO_TYPE: u8 = 59u8;
-```
-to
-```rust
-pub const VFIO_TYPE: u32 = 59;
-```
-
-This is required due to that bindgen can not generate VFIO_TYPE correctly
-at this moment. You might also want to add the proper license header to
-the file.
-
 Finally add the new version module to `vfio-bindings/lib.rs`. If this version
 is newer than the others already present, make this version the default one by
 getting it imported when there isn't any other version specified as a feature:

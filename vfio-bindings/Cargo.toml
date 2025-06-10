@@ -1,6 +1,6 @@
 [package]
 name = "vfio-bindings"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["The Cloud Hypervisor Authors"]
 license = "Apache-2.0 OR BSD-3-Clause"
 description = "Rust FFI bindings to vfio generated using bindgen."

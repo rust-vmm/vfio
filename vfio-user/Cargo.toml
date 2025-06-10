@@ -1,5 +1,5 @@
 [package]
-name = "vfio_user"
+name = "vfio-user"
 version = "0.1.0"
 authors = ["The Cloud Hypervisor Authors"]
 edition = "2021"

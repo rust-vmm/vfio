@@ -102,14 +102,14 @@ fn default_migration_capabilities() -> MigrationCapabilities {
 }
 
 bitflags! {
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct DmaMapFlags: u32 {
-        const READ_ONLY = 1 << 0;
-        const WRITE_ONLY = 1 << 1;
-        const READ_WRITE = Self::READ_ONLY.bits() | Self::WRITE_ONLY.bits();
+        const READ = 1 << 0;
+        const WRITE = 1 << 1;
+        const READ_WRITE = Self::READ.bits() | Self::WRITE.bits();
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct DmaUnmapFlags: u32 {
         const GET_DIRTY_PAGE_INFO = 1 << 1;
         const UNMAP_ALL = 1 << 2;

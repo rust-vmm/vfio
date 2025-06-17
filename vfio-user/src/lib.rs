@@ -107,12 +107,18 @@ bitflags! {
         const READ = 1 << 0;
         const WRITE = 1 << 1;
         const READ_WRITE = Self::READ.bits() | Self::WRITE.bits();
+
+        // There might be unknown bits and we don't want bitflags to clear them.
+        const _ = !0;
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct DmaUnmapFlags: u32 {
         const GET_DIRTY_PAGE_INFO = 1 << 1;
         const UNMAP_ALL = 1 << 2;
+
+        // See above.
+        const _ = !0;
     }
 }
 

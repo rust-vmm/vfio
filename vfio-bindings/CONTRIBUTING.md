@@ -54,11 +54,6 @@ cd ~
 # Step 5: Copy the generated files to the new version module.
 cp linux/v5_2_headers/vfio.rs vfio-bindings/src/bindings_v5_2_0
 ```
-Finally add the new version module to `vfio-bindings/lib.rs`. If this version
-is newer than the others already present, make this version the default one by
-getting it imported when there isn't any other version specified as a feature:
-
-```rust
-#[cfg(all(not(feature = "vfio-v5_0_0"), not(feature = "vfio-v5_2_0")))]
-pub use super::bindings_v5_2_0::*;
-```
+Finally add the new version module to `vfio-bindings/lib.rs`. Please
+update the compile-time check (e.g. `compile_error!()`) to ensure one
+and only one version of the bindings is enabled via feature flags.

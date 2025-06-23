@@ -300,12 +300,11 @@ impl VfioContainer {
     /// * iova: IO virtual address to mapping the memory.
     /// * size: size of the memory region.
     pub fn vfio_dma_unmap(&self, iova: u64, size: u64) -> Result<()> {
-        let mut dma_unmap = vfio_iommu_type1_dma_unmap {
-            argsz: mem::size_of::<vfio_iommu_type1_dma_unmap>() as u32,
-            flags: 0,
-            iova,
-            size,
-        };
+        let mut dma_unmap = vfio_iommu_type1_dma_unmap::default();
+        dma_unmap.argsz = mem::size_of::<vfio_iommu_type1_dma_unmap>() as u32;
+        dma_unmap.flags = 0;
+        dma_unmap.iova = iova;
+        dma_unmap.size = size;
 
         vfio_syscall::unmap_dma(self, &mut dma_unmap)?;
         if dma_unmap.size != size {
@@ -499,6 +498,10 @@ impl VfioGroup {
             flags: 0,
             num_regions: 0,
             num_irqs: 0,
+            #[cfg(feature = "vfio-v6_6_0")]
+            cap_offset: 0,
+            #[cfg(feature = "vfio-v6_6_0")]
+            pad: 0,
         };
         vfio_syscall::get_device_info(&device, &mut dev_info)?;
         match VfioGroup::get_device_type(&dev_info.flags) {

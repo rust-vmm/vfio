@@ -19,6 +19,8 @@ features = ["kvm"]
 default = ["kvm"]
 kvm = ["kvm-ioctls", "kvm-bindings"]
 mshv = ["mshv-ioctls", "mshv-bindings"]
+vfio-v5_0_0 = ["vfio-bindings/vfio-v5_0_0"]
+vfio-v6_6_0 = ["vfio-bindings/vfio-v6_6_0"]
 
 [dependencies]
 byteorder = "1.2.1"

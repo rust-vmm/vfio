@@ -10,6 +10,8 @@ supported Linux version, a feature is introduced.
 
 Currently supported features/Linux versions:
 - vfio-v5_0_0 contains the bindings for the Linux kernel version 5.0
+- vfio-v6_6_0 contains the bindings for the Linux kernel version 6.6
+(particularly to include uAPIs for vfio cdev and iommufd)
 
 ## Usage
 

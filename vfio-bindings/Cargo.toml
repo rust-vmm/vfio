@@ -14,6 +14,7 @@ features = ["vfio-v5_0_0", "fam-wrappers"]
 
 [features]
 vfio-v5_0_0 = []
+vfio-v6_6_0 = []
 fam-wrappers = ["vmm-sys-util"]
 
 [dependencies]

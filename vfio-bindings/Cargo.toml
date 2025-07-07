@@ -10,7 +10,7 @@ edition = "2018"
 keywords = ["vfio"]
 
 [package.metadata.docs.rs]
-features = ["vfio-v5_0_0", "fam-wrappers"]
+features = ["fam-wrappers"]
 
 [features]
 vfio-v5_0_0 = []

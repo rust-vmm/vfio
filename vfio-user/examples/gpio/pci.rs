@@ -555,7 +555,7 @@ impl PciConfiguration {
 
     /// Returns an iterator of the currently configured base address registers.
     #[allow(dead_code)] // TODO(dverkamp): remove this once used
-    pub fn get_bars(&self) -> PciBarIter {
+    pub fn get_bars(&self) -> PciBarIter<'_> {
         PciBarIter {
             config: self,
             bar_num: 0,

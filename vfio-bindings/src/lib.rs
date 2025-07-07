@@ -9,18 +9,18 @@ extern crate vmm_sys_util;
 mod fam_wrappers;
 
 #[cfg(feature = "vfio-v5_0_0")]
-mod bindings_v5_0_0;
+mod vfio_bindings;
 
 // Default to latest version if no version is specified by using the features.
 #[cfg(not(feature = "vfio-v5_0_0"))]
-mod bindings_v5_0_0;
+mod vfio_bindings;
 
 pub mod bindings {
     #[cfg(feature = "vfio-v5_0_0")]
-    pub use super::bindings_v5_0_0::*;
+    pub use super::vfio_bindings::*;
 
     #[cfg(not(feature = "vfio-v5_0_0"))]
-    pub use super::bindings_v5_0_0::*;
+    pub use super::vfio_bindings::*;
 
     #[cfg(feature = "fam-wrappers")]
     pub use super::fam_wrappers::*;

@@ -1,3 +1,17 @@
+# Upcoming Release
+
+## Changed
+
+- Functions that map memory into the VFIO device are now marked as
+  `unsafe`.  The caller of these functions is responsible for enforcing
+  various complex but documented invariants to avoid undefined behavior.
+  This requirement is also present in previous versions of the crate,
+  but the function was not marked unsafe and the invariants were not
+  documented.
+
+  In the future a high-level safe API will be provided that avoids
+  these requirements at the cost of some flexibility.
+
 # [v0.5.0]
 
 ## Changed

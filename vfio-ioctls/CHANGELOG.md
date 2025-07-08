@@ -4,6 +4,19 @@
 
 - [[128]](https://github.com/rust-vmm/vfio/pull/128) Support vm-memory 0.17
 
+- [[103]](https://github.com/rust-vmm/vfio/pull/103)  Functions that map
+  memory into the VFIO device are now marked as `unsafe`.  The caller
+  of these functions is responsible for enforcing various complex but
+  documented invariants to avoid undefined behavior.  This requirement
+  is also present in previous versions of the crate, but the function
+  was not marked unsafe and the invariants were not documented.
+
+  In the future a high-level safe API may be provided that avoids
+  these requirements at the cost of some flexibility.
+
+  Also, size parameters are now `usize` instead of `u64`, and
+  address parameters are `*mut u8` instead of `u64`.
+
 ## Added
 
 - [[127]](https://github.com/rust-vmm/vfio/pull/127) vfio-ioctls: Add support for vfio cdev and iommufd

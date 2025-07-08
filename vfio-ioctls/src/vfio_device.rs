@@ -354,10 +354,21 @@ impl VfioContainer {
     /// Panics if the length of one of the regions overflows `usize`.
     pub unsafe fn vfio_map_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
         mem.iter().try_for_each(|region| {
-            let host_addr = region
-                .get_host_address(MemoryRegionAddress(0))
+            let len = region.len().try_into().unwrap();
+            let slice = region
+                .get_slice(MemoryRegionAddress(0), len)
                 .map_err(|_| VfioError::GetHostAddress)?;
-            // SAFETY: GuestMemory guarantees the requirements
+            assert_eq!(slice.len(), len);
+            // FIXME: This crate (vfio-ioctls) is badly designed, because
+            // it does not own the buffers that it maps into the kernel.
+            // A proper design would own the buffers and unmap them on `Drop`.
+            // To compose with other libraries that also need to own buffers,
+            // this needs some sort of API that refers to a region of address
+            // space and has hooks that are called when the address space is
+            // unmapped.
+            let host_addr = slice.ptr_guard_mut();
+            let host_addr = host_addr.as_ptr();
+            // SAFETY: VolatileSlice guarantees the requirements
             // are upheld.
             unsafe {
                 self.vfio_dma_map(

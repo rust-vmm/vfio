@@ -99,12 +99,15 @@ pub(crate) mod vfio_syscall {
         }
     }
 
-    pub(crate) fn map_dma(
+    /// # Safety
+    ///
+    /// See [`VfioContainer::vfio_dma_map`]
+    pub(crate) unsafe fn map_dma(
         container: &VfioContainer,
         dma_map: &vfio_iommu_type1_dma_map,
     ) -> Result<()> {
-        // SAFETY: file is vfio container, dma_map is constructed by us, and
-        // we check the return value
+        // SAFETY: File is vfio container and the ioctl number is valid.  Other
+        // invariants are the caller's responsibility.
         let ret = unsafe { ioctl_with_ref(container, VFIO_IOMMU_MAP_DMA(), dma_map) };
         if ret != 0 {
             Err(VfioError::IommuDmaMap(SysError::last()))
@@ -338,7 +341,7 @@ pub(crate) mod vfio_syscall {
         Ok(())
     }
 
-    pub(crate) fn map_dma(
+    pub(crate) unsafe fn map_dma(
         _container: &VfioContainer,
         dma_map: &vfio_iommu_type1_dma_map,
     ) -> Result<()> {

@@ -5,6 +5,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
+use std::convert::{TryFrom as _, TryInto as _};
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
 use std::mem::{self, ManuallyDrop};
@@ -160,11 +161,31 @@ pub trait VfioOps: Any + Send + Sync {
     /// associated VFIO devices
     ///
     /// # Parameters
-    /// * iova: IO virtual address to map the memory.
+    ///
+    /// * iova: IO virtual address to mapping the memory.
     /// * size: size of the memory region.
-    /// * user_addr: user space address (e.g. host virtual address) for
-    ///   the guest memory region to map.
-    fn vfio_dma_map(&self, _iova: u64, _size: u64, _user_addr: u64) -> Result<()> {
+    /// * user_addr: host virtual address for the guest memory region to map.
+    ///
+    /// # Safety
+    ///
+    /// Until [`Self::vfio_dma_unmap`] is successfully called with identical
+    /// values for iova and size, or until the entire range of
+    /// `[user_addr..user_addr+size)` has been unmapped with successful calls
+    /// to `munmap` or replaced with successful calls to `mmap(MAP_FIXED)`,
+    /// the only safe uses of the address range `[user_addr..user_addr+size)` are:
+    ///
+    /// - Atomic and/or volatile operations on raw pointers.
+    /// - Sharing the underlying storage with another process or a guest VM.
+    /// - Passing a pointer to the memory to a system call (such as `read()`
+    ///   or `write()`) that is safe regardless of the memory's contents.
+    /// - Passing a raw pointer to functions that only do one of the above things.
+    ///
+    /// In particular, creating a Rust reference to this memory is instant undefined behavior
+    /// due to the Rust aliasing rules.  It is also undefined behavior to call this function if
+    /// a Rust reference to this memory is live.  This is because the device has
+    /// concurrent read and write access to the memory via DMA.  Therefore, the
+    /// memory may be read or written by the device at any time without synchronization.
+    unsafe fn vfio_dma_map(&self, _iova: u64, _size: usize, _user_addr: *mut u8) -> Result<()> {
         unimplemented!()
     }
 
@@ -175,7 +196,7 @@ pub trait VfioOps: Any + Send + Sync {
     /// # Parameters
     /// * iova: IO virtual address to unmap the memory.
     /// * size: size of the memory region.
-    fn vfio_dma_unmap(&self, _iova: u64, _size: u64) -> Result<()> {
+    fn vfio_dma_unmap(&self, _iova: u64, _size: usize) -> Result<()> {
         unimplemented!()
     }
 
@@ -372,19 +393,43 @@ impl VfioContainer {
     /// associated VFIO devices
     ///
     /// # Parameters
+    ///
     /// * iova: IO virtual address to mapping the memory.
     /// * size: size of the memory region.
     /// * user_addr: host virtual address for the guest memory region to map.
-    pub fn vfio_dma_map(&self, iova: u64, size: u64, user_addr: u64) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// Until [`Self::vfio_dma_unmap`] is successfully called with identical
+    /// values for iova and size, or until the entire range of
+    /// `[user_addr..user_addr+size)` has been unmapped with successful calls
+    /// to `munmap` or replaced with successful calls to `mmap(MAP_FIXED)`,
+    /// the only safe uses of the address range `[user_addr..user_addr+size)` are:
+    ///
+    /// - Atomic and/or volatile operations on raw pointers.
+    /// - Sharing the underlying storage with another process or a guest VM.
+    /// - Passing a pointer to the memory to a system call (such as `read()`
+    ///   or `write()`) that is safe regardless of the memory's contents.
+    /// - Passing a raw pointer to functions that only do one of the above things.
+    ///
+    /// In particular, creating a Rust reference to this memory is instant undefined behavior
+    /// due to the Rust aliasing rules.  It is also undefined behavior to call this function if
+    /// a Rust reference to this memory is live.  This is because the device has
+    /// concurrent read and write access to the memory via DMA.  Therefore, the
+    /// memory may be read or written by the device at any time without synchronization.
+    pub unsafe fn vfio_dma_map(&self, iova: u64, size: usize, user_addr: *mut u8) -> Result<()> {
+        const _: () = assert!(mem::size_of::<u64>() >= mem::size_of::<*mut u8>());
+        const _: () = assert!(mem::size_of::<u64>() >= mem::size_of::<usize>());
         let dma_map = vfio_iommu_type1_dma_map {
             argsz: mem::size_of::<vfio_iommu_type1_dma_map>() as u32,
             flags: VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE,
-            vaddr: user_addr,
+            vaddr: (user_addr as usize).try_into().unwrap(),
             iova,
-            size,
+            size: size.try_into().unwrap(),
         };
 
-        vfio_syscall::map_dma(self, &dma_map)
+        // SAFETY: Caller is responsible for upholding preconditions.
+        unsafe { vfio_syscall::map_dma(self, &dma_map) }
     }
 
     /// Unmap a region of user space memory (e.g. guest memory) from an IO
@@ -394,17 +439,17 @@ impl VfioContainer {
     /// # Parameters
     /// * iova: IO virtual address to unmap the memory.
     /// * size: size of the memory region.
-    pub fn vfio_dma_unmap(&self, iova: u64, size: u64) -> Result<()> {
+    pub fn vfio_dma_unmap(&self, iova: u64, size: usize) -> Result<()> {
         let mut dma_unmap = vfio_iommu_type1_dma_unmap {
             argsz: mem::size_of::<vfio_iommu_type1_dma_unmap>() as u32,
             flags: 0,
             iova,
-            size,
+            size: size.try_into().unwrap(),
             ..Default::default()
         };
 
         vfio_syscall::unmap_dma(self, &mut dma_unmap)?;
-        if dma_unmap.size != size {
+        if dma_unmap.size != u64::try_from(size).unwrap() {
             return Err(VfioError::InvalidDmaUnmapSize);
         }
 
@@ -415,29 +460,68 @@ impl VfioContainer {
     ///
     /// # Parameters
     /// * mem: pinned guest memory which could be accessed by devices binding to the container.
-    pub fn vfio_map_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// Each of the memory regions must uphold the safety invariants of [`Self::vfio_dma_map`].
+    /// Additionally, the [`GuestMemory`] implementation must be well-behaved and uphold the
+    /// contracts in its documentation.
+    ///
+    /// If this function fails (returning [`core::result::Result::Err`]) there is no way to know
+    /// which parts of the guest memory were successfully mapped.  The only safe action to take
+    /// to avoid undefined guest behavior is to crash the guest.
+    ///
+    /// # Errors
+    ///
+    /// Fails if any of the mapping operations fail.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length of one of the regions overflows `usize`.
+    pub unsafe fn vfio_map_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
         mem.iter().try_for_each(|region| {
             let host_addr = region
                 .get_host_address(MemoryRegionAddress(0))
                 .map_err(|_| VfioError::GetHostAddress)?;
-            self.vfio_dma_map(
-                region.start_addr().raw_value(),
-                region.len(),
-                host_addr as u64,
-            )
+            // SAFETY: GuestMemory guarantees the requirements
+            // are upheld.
+            unsafe {
+                self.vfio_dma_map(
+                    region.start_addr().raw_value(),
+                    region.len().try_into().unwrap(),
+                    host_addr,
+                )
+            }
         })
     }
 
     /// Remove all guest memory regions from the vfio container's iommu table.
     ///
-    /// The vfio kernel driver and device hardware couldn't access this guest memory after
-    /// returning from the function.
+    /// The vfio kernel driver and device hardware can't access this guest memory after
+    /// the function returns successfully, **provided that the following precondition holds**.
+    ///
+    /// # Precondition
+    ///
+    /// A previous call to [`Self::vfio_map_guest_memory`] must have succeeded, and iterating
+    /// over the regions in the [`GuestMemory`] must produce the same values it did in the
+    /// past.  This latter contract will be upheld by a correct [`GuestMemory`] implementation,
+    /// but [`GuestMemory`] is a safe trait and so unsafe code must not rely on this unless it
+    /// is explicitly part of a safety contract.
     ///
     /// # Parameters
     /// * mem: pinned guest memory which could be accessed by devices binding to the container.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length of any of the regions overflows `usize`.  That should have been
+    /// caught by [`Self::vfio_map_guest_memory`], so it indicates a bogus [`GuestMemory`]
+    /// implementation.
     pub fn vfio_unmap_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
         mem.iter().try_for_each(|region| {
-            self.vfio_dma_unmap(region.start_addr().raw_value(), region.len())
+            self.vfio_dma_unmap(
+                region.start_addr().raw_value(),
+                region.len().try_into().unwrap(),
+            )
         })
     }
 
@@ -481,11 +565,47 @@ impl AsRawFd for VfioContainer {
 }
 
 impl VfioOps for VfioContainer {
-    fn vfio_dma_map(&self, iova: u64, size: u64, user_addr: u64) -> Result<()> {
+    /// Map a region of user space memory (e.g. guest memory) into an IO
+    /// address space managed by IOMMU hardware to enable DMA for
+    /// associated VFIO devices
+    ///
+    /// # Parameters
+    ///
+    /// * iova: IO virtual address to mapping the memory.
+    /// * size: size of the memory region.
+    /// * user_addr: host virtual address for the guest memory region to map.
+    ///
+    /// # Safety
+    ///
+    /// Until [`Self::vfio_dma_unmap`] is successfully called with identical
+    /// values for iova and size, or until the entire range of `[user_addr..user_addr+size)`
+    /// has been unmapped with successful calls to `munmap` or replaced with successful calls
+    /// to `mmap(MAP_FIXED)`, the only safe uses of the address range
+    /// `[user_addr..user_addr+size)` are:
+    ///
+    /// - Atomic and/or volatile operations on raw pointers.
+    /// - Sharing the underlying storage with another process or a guest VM.
+    /// - Passing a pointer to the memory to a system call (such as `read()`
+    ///   or `write()`) that is safe regardless of the memory's contents.
+    /// - Passing a raw pointer to functions that only do one of the above things.
+    ///
+    /// In particular, creating a Rust reference to this memory is instant undefined behavior
+    /// due to the Rust aliasing rules.  It is also undefined behavior to call this function if
+    /// a Rust reference to this memory is live.  This is because the device has
+    /// concurrent read and write access to the memory via DMA.  Therefore, the
+    /// memory may be read or written by the device at any time without synchronization.
+    unsafe fn vfio_dma_map(&self, iova: u64, size: usize, user_addr: *mut u8) -> Result<()> {
         self.vfio_dma_map(iova, size, user_addr)
     }
 
-    fn vfio_dma_unmap(&self, iova: u64, size: u64) -> Result<()> {
+    /// Unmap a region of user space memory (e.g. guest memory) from an IO
+    /// address space managed by IOMMU hardware to disable DMA for
+    /// associated VFIO devices
+    ///
+    /// # Parameters
+    /// * iova: IO virtual address to unmap the memory.
+    /// * size: size of the memory region.
+    fn vfio_dma_unmap(&self, iova: u64, size: usize) -> Result<()> {
         self.vfio_dma_unmap(iova, size)
     }
 
@@ -609,11 +729,30 @@ impl VfioIommufd {
     /// associated VFIO devices
     ///
     /// # Parameters
-    /// * iova: IO virtual address to map the memory.
+    ///
+    /// * iova: IO virtual address to mapping the memory.
     /// * size: size of the memory region.
-    /// * user_addr: user space address (e.g. host virtual address) for
-    ///   the guest memory region to map.
-    pub fn vfio_dma_map(&self, iova: u64, length: u64, user_addr: u64) -> Result<()> {
+    /// * user_addr: host virtual address for the guest memory region to map.
+    ///
+    /// # Safety
+    ///
+    /// Until [`Self::vfio_dma_unmap`] is successfully called with identical
+    /// values for iova and size, or until the entire range of `[user_addr..user_addr+size)`
+    /// has been unmapped with successful calls to `munmap` or replaced with successful calls
+    /// to `mmap(MAP_FIXED)`, the only safe uses of the address range
+    /// `[user_addr..user_addr+size)` are:
+    ///
+    /// - Atomic and/or volatile operations on raw pointers.
+    /// - Sharing the underlying storage with another process or a guest VM.
+    /// - Passing a pointer to the memory to a system call (such as `read()`
+    ///   or `write()`) that is safe regardless of the memory's contents.
+    /// - Passing a raw pointer to functions that only do one of the above things.
+    ///
+    /// In particular, creating a Rust reference to this memory is instant undefined behavior
+    /// due to the Rust aliasing rules.  It is also undefined behavior to call this function if
+    /// a Rust reference to this memory is live.
+    #[allow(unused_unsafe)] // underlying API is unsound
+    pub unsafe fn vfio_dma_map(&self, iova: u64, length: usize, user_addr: *mut u8) -> Result<()> {
         let dma_map = iommu_ioas_map {
             size: mem::size_of::<iommu_ioas_map>() as u32,
             flags: iommufd_ioas_map_flags_IOMMU_IOAS_MAP_READABLE
@@ -621,8 +760,8 @@ impl VfioIommufd {
                 | iommufd_ioas_map_flags_IOMMU_IOAS_MAP_FIXED_IOVA,
             ioas_id: self.ioas_id,
             __reserved: 0,
-            user_va: user_addr,
-            length,
+            user_va: user_addr as _,
+            length: length.try_into().unwrap(),
             iova,
         };
 
@@ -638,19 +777,19 @@ impl VfioIommufd {
     /// # Parameters
     /// * iova: IO virtual address to unmap the memory.
     /// * size: size of the memory region.
-    pub fn vfio_dma_unmap(&self, iova: u64, length: u64) -> Result<()> {
+    pub fn vfio_dma_unmap(&self, iova: u64, length: usize) -> Result<()> {
         let mut dma_unmap = iommu_ioas_unmap {
             size: mem::size_of::<iommu_ioas_unmap>() as u32,
             ioas_id: self.ioas_id,
             iova,
-            length,
+            length: u64::try_from(length).unwrap(),
         };
 
         self.iommufd
             .unmap_iommu_ioas(&mut dma_unmap)
             .map_err(VfioError::IommufdIoctlError)?;
 
-        if dma_unmap.length != length {
+        if dma_unmap.length != u64::try_from(length).unwrap() {
             return Err(VfioError::InvalidDmaUnmapSize);
         }
 
@@ -660,11 +799,38 @@ impl VfioIommufd {
 
 #[cfg(feature = "vfio_cdev")]
 impl VfioOps for VfioIommufd {
-    fn vfio_dma_map(&self, iova: u64, size: u64, user_addr: u64) -> Result<()> {
+    /// Map a region of user space memory (e.g. guest memory) into an IO
+    /// address space managed by IOMMU hardware to enable DMA for
+    /// associated VFIO devices
+    ///
+    /// # Parameters
+    ///
+    /// * iova: IO virtual address to mapping the memory.
+    /// * size: size of the memory region.
+    /// * user_addr: host virtual address for the guest memory region to map.
+    ///
+    /// # Safety
+    ///
+    /// Until [`Self::vfio_dma_unmap`] is successfully called with identical
+    /// values for iova and size, or until the entire range of `[user_addr..user_addr+size)`
+    /// has been unmapped with successful calls to `munmap` or replaced with successful calls
+    /// to `mmap(MAP_FIXED)`, the only safe uses of the address range
+    /// `[user_addr..user_addr+size)` are:
+    ///
+    /// - Atomic and/or volatile operations on raw pointers.
+    /// - Sharing the underlying storage with another process or a guest VM.
+    /// - Passing a pointer to the memory to a system call (such as `read()`
+    ///   or `write()`) that is safe regardless of the memory's contents.
+    /// - Passing a raw pointer to functions that only do one of the above things.
+    ///
+    /// In particular, creating a Rust reference to this memory is instant undefined behavior
+    /// due to the Rust aliasing rules.  It is also undefined behavior to call this function if
+    /// a Rust reference to this memory is live.
+    unsafe fn vfio_dma_map(&self, iova: u64, size: usize, user_addr: *mut u8) -> Result<()> {
         self.vfio_dma_map(iova, size, user_addr)
     }
 
-    fn vfio_dma_unmap(&self, iova: u64, size: u64) -> Result<()> {
+    fn vfio_dma_unmap(&self, iova: u64, size: usize) -> Result<()> {
         self.vfio_dma_unmap(iova, size)
     }
 
@@ -1643,8 +1809,10 @@ mod tests {
         assert_eq!(Arc::strong_count(&group), 2);
         container.put_group(group);
 
-        container.vfio_dma_map(0x1000, 0x1000, 0x8000).unwrap();
-        container.vfio_dma_map(0x2000, 0x2000, 0x8000).unwrap_err();
+        // SAFETY: this is a test implementation that does not access memory
+        unsafe { container.vfio_dma_map(0x1000, 0x1000, 0x8000 as _) }.unwrap();
+        // SAFETY: this is a test implementation that does not access memory
+        unsafe { container.vfio_dma_map(0x2000, 0x2000, 0x8000 as _) }.unwrap_err();
         container.vfio_dma_unmap(0x1000, 0x1000).unwrap();
         container.vfio_dma_unmap(0x2000, 0x2000).unwrap_err();
     }
@@ -1791,7 +1959,9 @@ mod tests {
         let mem1 = GuestMemoryMmap::<()>::from_ranges(&[(addr1, 0x1000)]).unwrap();
         let container = create_vfio_container();
 
-        container.vfio_map_guest_memory(&mem1).unwrap();
+        // SAFETY: This is a dummy implementation that does not access
+        // memory.
+        unsafe { container.vfio_map_guest_memory(&mem1) }.unwrap();
 
         let addr2 = GuestAddress(0x3000);
         let mem2 = GuestMemoryMmap::<()>::from_ranges(&[(addr2, 0x1000)]).unwrap();

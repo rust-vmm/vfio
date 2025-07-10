@@ -1,3 +1,10 @@
+## Upcoming Release
+
+### Changed
+
+- [[101]](https://github.com/rust-vmm/vfio/pull/101) Disable multi-version support
+- [[104]](https://github.com/rust-vmm/vfio/pull/104) Regenerate vfio-bindings with the Linux kernel v6.6.0
+
 # [v0.5.0]
 
 ## Fixed

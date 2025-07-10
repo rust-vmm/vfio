@@ -305,6 +305,7 @@ impl VfioContainer {
             flags: 0,
             iova,
             size,
+            ..Default::default()
         };
 
         vfio_syscall::unmap_dma(self, &mut dma_unmap)?;
@@ -499,6 +500,8 @@ impl VfioGroup {
             flags: 0,
             num_regions: 0,
             num_irqs: 0,
+            cap_offset: 0,
+            pad: 0,
         };
         vfio_syscall::get_device_info(&device, &mut dev_info)?;
         match VfioGroup::get_device_type(&dev_info.flags) {

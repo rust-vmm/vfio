@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR BSD-3-Clause
 
 use std::collections::HashMap;
+use std::convert::{TryFrom as _, TryInto as _};
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
 use std::mem::{self, ManuallyDrop};
@@ -279,16 +280,36 @@ impl VfioContainer {
     /// Map a region of guest memory regions into the vfio container's iommu table.
     ///
     /// # Parameters
+    ///
     /// * iova: IO virtual address to mapping the memory.
     /// * size: size of the memory region.
     /// * user_addr: host virtual address for the guest memory region to map.
-    pub fn vfio_dma_map(&self, iova: u64, size: u64, user_addr: u64) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// Until [`Self::vfio_dma_unmap`] is successfully called with identical
+    /// values for iova and size, or until the entire range of `[user_addr..user_addr+size]`
+    /// has been unmapped with successful calls to `munmap` or replaced with successful calls
+    /// to `mmap(MAP_FIXED)`, it is not safe to use any of the address range in
+    /// `[user_addr..user_addr+size]` for almost any purpose.  The only permitted purposes are
+    ///
+    /// - Atomic and/or volatile operations.
+    /// - Assignment to a guest.
+    /// - Sharing with another process.
+    /// - Passing a raw pointer to functions that only do one of the above things.
+    ///
+    /// In particular, creating a Rust reference to this memory is instant undefined behavior
+    /// due to the Rust aliasing rules.  It is also undefined behavior to call this function if
+    /// a Rust reference to this memory is live.
+    pub unsafe fn vfio_dma_map(&self, iova: u64, size: usize, user_addr: *mut u8) -> Result<()> {
+        const _: () = assert!(mem::size_of::<u64>() >= mem::size_of::<*mut u8>());
+        const _: () = assert!(mem::size_of::<u64>() >= mem::size_of::<usize>());
         let dma_map = vfio_iommu_type1_dma_map {
             argsz: mem::size_of::<vfio_iommu_type1_dma_map>() as u32,
             flags: VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE,
-            vaddr: user_addr,
+            vaddr: (user_addr as usize).try_into().unwrap(),
             iova,
-            size,
+            size: size.try_into().unwrap(),
         };
 
         vfio_syscall::map_dma(self, &dma_map)
@@ -299,16 +320,16 @@ impl VfioContainer {
     /// # Parameters
     /// * iova: IO virtual address to mapping the memory.
     /// * size: size of the memory region.
-    pub fn vfio_dma_unmap(&self, iova: u64, size: u64) -> Result<()> {
+    pub fn vfio_dma_unmap(&self, iova: u64, size: usize) -> Result<()> {
         let mut dma_unmap = vfio_iommu_type1_dma_unmap {
             argsz: mem::size_of::<vfio_iommu_type1_dma_unmap>() as u32,
             flags: 0,
             iova,
-            size,
+            size: size.try_into().unwrap(),
         };
 
         vfio_syscall::unmap_dma(self, &mut dma_unmap)?;
-        if dma_unmap.size != size {
+        if dma_unmap.size != u64::try_from(size).unwrap() {
             return Err(VfioError::InvalidDmaUnmapSize);
         }
 
@@ -319,29 +340,65 @@ impl VfioContainer {
     ///
     /// # Parameters
     /// * mem: pinned guest memory which could be accessed by devices binding to the container.
-    pub fn vfio_map_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// You have to promise that the requirements of [`Self::vfio_dma_map`] are upheld for each
+    /// of the regions.  A future version of the crate will ensure that they are upheld by having
+    /// `vfio-ioctls` own a reference to the memory mapped into the guest.  You also have to
+    /// promise that the [`GuestMemory`] implementation is well-behaved and upholds the contracts
+    /// in its documentation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length of one of the regions overflows `usize`.
+    pub unsafe fn vfio_map_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
         mem.iter().try_for_each(|region| {
-            let host_addr = region
-                .get_host_address(MemoryRegionAddress(0))
+            let len = region.len().try_into().unwrap();
+            let slice = region
+                .get_slice(MemoryRegionAddress(0), len)
                 .map_err(|_| VfioError::GetHostAddress)?;
-            self.vfio_dma_map(
-                region.start_addr().raw_value(),
-                region.len(),
-                host_addr as u64,
-            )
+            assert_eq!(slice.len(), len);
+            // FIXME: This crate (vfio-ioctls) is badly designed, because
+            // it does not own the buffers that it maps into the kernel.
+            // A proper design would own the buffers and unmap them on `Drop`.
+            // To compose with other libraries that also need to own buffers,
+            // this needs some sort of API that refers to a region of address
+            // space and has hooks that are called when the address space is
+            // unmapped.
+            let host_addr = slice.ptr_guard_mut();
+            let host_addr = host_addr.as_ptr();
+            // SAFETY: VolatileSlice guarantees the requirements
+            // are upheld.
+            unsafe {
+                self.vfio_dma_map(
+                    region.start_addr().raw_value(),
+                    region.len().try_into().unwrap(),
+                    host_addr,
+                )
+            }
         })
     }
 
     /// Remove all guest memory regions from the vfio container's iommu table.
     ///
-    /// The vfio kernel driver and device hardware couldn't access this guest memory after
-    /// returning from the function.
+    /// The vfio kernel driver and device hardware can't access this guest memory after
+    /// the function returns successfully.
     ///
     /// # Parameters
     /// * mem: pinned guest memory which could be accessed by devices binding to the container.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length of any of the regions overflows `usize`.  That should have been
+    /// caught by [`Self::vfio_map_guest_memory`], so it indicates a bogus [`GuestMemory`]
+    /// implementation.
     pub fn vfio_unmap_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
         mem.iter().try_for_each(|region| {
-            self.vfio_dma_unmap(region.start_addr().raw_value(), region.len())
+            self.vfio_dma_unmap(
+                region.start_addr().raw_value(),
+                region.len().try_into().unwrap(),
+            )
         })
     }
 
@@ -1358,8 +1415,10 @@ mod tests {
         container.put_group(group3);
         assert_eq!(Arc::strong_count(&group), 1);
 
-        container.vfio_dma_map(0x1000, 0x1000, 0x8000).unwrap();
-        container.vfio_dma_map(0x2000, 0x2000, 0x8000).unwrap_err();
+        // SAFETY: this is a test implementation that does not access memory
+        unsafe { container.vfio_dma_map(0x1000, 0x1000, 0x8000 as _) }.unwrap();
+        // SAFETY: this is a test implementation that does not access memory
+        unsafe { container.vfio_dma_map(0x2000, 0x2000, 0x8000 as _) }.unwrap_err();
         container.vfio_dma_unmap(0x1000, 0x1000).unwrap();
         container.vfio_dma_unmap(0x2000, 0x2000).unwrap_err();
     }
@@ -1506,7 +1565,9 @@ mod tests {
         let mem1 = GuestMemoryMmap::<()>::from_ranges(&[(addr1, 0x1000)]).unwrap();
         let container = create_vfio_container();
 
-        container.vfio_map_guest_memory(&mem1).unwrap();
+        // SAFETY: This is a dummy implementation that does not access
+        // memory.
+        unsafe { container.vfio_map_guest_memory(&mem1) }.unwrap();
 
         let addr2 = GuestAddress(0x3000);
         let mem2 = GuestMemoryMmap::<()>::from_ranges(&[(addr2, 0x1000)]).unwrap();

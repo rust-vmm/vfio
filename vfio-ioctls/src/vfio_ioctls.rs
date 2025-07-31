@@ -494,6 +494,8 @@ pub(crate) mod vfio_syscall {
             flags: 0,
             num_regions: 2,
             num_irqs: 4,
+            cap_offset: 0,
+            pad: 0,
         }
     }
 }

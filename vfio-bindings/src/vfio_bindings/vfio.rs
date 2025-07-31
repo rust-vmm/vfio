@@ -61,6 +61,8 @@ pub const VFIO_EEH: u32 = 5;
 pub const VFIO_TYPE1_NESTING_IOMMU: u32 = 6;
 pub const VFIO_SPAPR_TCE_v2_IOMMU: u32 = 7;
 pub const VFIO_NOIOMMU_IOMMU: u32 = 8;
+pub const VFIO_UNMAP_ALL: u32 = 9;
+pub const VFIO_UPDATE_VADDR: u32 = 10;
 pub const VFIO_TYPE: u8 = 59u8;
 pub const VFIO_BASE: u32 = 100;
 pub const VFIO_GROUP_FLAGS_VIABLE: u32 = 1;
@@ -71,11 +73,22 @@ pub const VFIO_DEVICE_FLAGS_PLATFORM: u32 = 4;
 pub const VFIO_DEVICE_FLAGS_AMBA: u32 = 8;
 pub const VFIO_DEVICE_FLAGS_CCW: u32 = 16;
 pub const VFIO_DEVICE_FLAGS_AP: u32 = 32;
+pub const VFIO_DEVICE_FLAGS_FSL_MC: u32 = 64;
+pub const VFIO_DEVICE_FLAGS_CAPS: u32 = 128;
+pub const VFIO_DEVICE_FLAGS_CDX: u32 = 256;
 pub const VFIO_DEVICE_API_PCI_STRING: &[u8; 9] = b"vfio-pci\0";
 pub const VFIO_DEVICE_API_PLATFORM_STRING: &[u8; 14] = b"vfio-platform\0";
 pub const VFIO_DEVICE_API_AMBA_STRING: &[u8; 10] = b"vfio-amba\0";
 pub const VFIO_DEVICE_API_CCW_STRING: &[u8; 9] = b"vfio-ccw\0";
 pub const VFIO_DEVICE_API_AP_STRING: &[u8; 8] = b"vfio-ap\0";
+pub const VFIO_DEVICE_INFO_CAP_ZPCI_BASE: u32 = 1;
+pub const VFIO_DEVICE_INFO_CAP_ZPCI_GROUP: u32 = 2;
+pub const VFIO_DEVICE_INFO_CAP_ZPCI_UTIL: u32 = 3;
+pub const VFIO_DEVICE_INFO_CAP_ZPCI_PFIP: u32 = 4;
+pub const VFIO_DEVICE_INFO_CAP_PCI_ATOMIC_COMP: u32 = 5;
+pub const VFIO_PCI_ATOMIC_COMP32: u32 = 1;
+pub const VFIO_PCI_ATOMIC_COMP64: u32 = 2;
+pub const VFIO_PCI_ATOMIC_COMP128: u32 = 4;
 pub const VFIO_REGION_INFO_FLAG_READ: u32 = 1;
 pub const VFIO_REGION_INFO_FLAG_WRITE: u32 = 2;
 pub const VFIO_REGION_INFO_FLAG_MMAP: u32 = 4;
@@ -84,15 +97,26 @@ pub const VFIO_REGION_INFO_CAP_SPARSE_MMAP: u32 = 1;
 pub const VFIO_REGION_INFO_CAP_TYPE: u32 = 2;
 pub const VFIO_REGION_TYPE_PCI_VENDOR_TYPE: u32 = 2147483648;
 pub const VFIO_REGION_TYPE_PCI_VENDOR_MASK: u32 = 65535;
+pub const VFIO_REGION_TYPE_GFX: u32 = 1;
+pub const VFIO_REGION_TYPE_CCW: u32 = 2;
+pub const VFIO_REGION_TYPE_MIGRATION_DEPRECATED: u32 = 3;
 pub const VFIO_REGION_SUBTYPE_INTEL_IGD_OPREGION: u32 = 1;
 pub const VFIO_REGION_SUBTYPE_INTEL_IGD_HOST_CFG: u32 = 2;
 pub const VFIO_REGION_SUBTYPE_INTEL_IGD_LPC_CFG: u32 = 3;
-pub const VFIO_REGION_TYPE_GFX: u32 = 1;
+pub const VFIO_REGION_SUBTYPE_NVIDIA_NVLINK2_RAM: u32 = 1;
+pub const VFIO_REGION_SUBTYPE_IBM_NVLINK2_ATSD: u32 = 1;
 pub const VFIO_REGION_SUBTYPE_GFX_EDID: u32 = 1;
 pub const VFIO_DEVICE_GFX_LINK_STATE_UP: u32 = 1;
 pub const VFIO_DEVICE_GFX_LINK_STATE_DOWN: u32 = 2;
-pub const VFIO_REGION_SUBTYPE_NVIDIA_NVLINK2_RAM: u32 = 1;
-pub const VFIO_REGION_SUBTYPE_IBM_NVLINK2_ATSD: u32 = 1;
+pub const VFIO_REGION_SUBTYPE_CCW_ASYNC_CMD: u32 = 1;
+pub const VFIO_REGION_SUBTYPE_CCW_SCHIB: u32 = 2;
+pub const VFIO_REGION_SUBTYPE_CCW_CRW: u32 = 3;
+pub const VFIO_REGION_SUBTYPE_MIGRATION_DEPRECATED: u32 = 1;
+pub const VFIO_DEVICE_STATE_V1_STOP: u32 = 0;
+pub const VFIO_DEVICE_STATE_V1_RUNNING: u32 = 1;
+pub const VFIO_DEVICE_STATE_V1_SAVING: u32 = 2;
+pub const VFIO_DEVICE_STATE_V1_RESUMING: u32 = 4;
+pub const VFIO_DEVICE_STATE_MASK: u32 = 7;
 pub const VFIO_REGION_INFO_CAP_MSIX_MAPPABLE: u32 = 3;
 pub const VFIO_REGION_INFO_CAP_NVLINK2_SSATGT: u32 = 4;
 pub const VFIO_REGION_INFO_CAP_NVLINK2_LNKSPD: u32 = 5;
@@ -108,6 +132,10 @@ pub const VFIO_IRQ_SET_ACTION_UNMASK: u32 = 16;
 pub const VFIO_IRQ_SET_ACTION_TRIGGER: u32 = 32;
 pub const VFIO_IRQ_SET_DATA_TYPE_MASK: u32 = 7;
 pub const VFIO_IRQ_SET_ACTION_TYPE_MASK: u32 = 56;
+pub const VFIO_PCI_DEVID_OWNED: u32 = 0;
+pub const VFIO_PCI_DEVID_NOT_OWNED: i32 = -1;
+pub const VFIO_PCI_HOT_RESET_FLAG_DEV_ID: u32 = 1;
+pub const VFIO_PCI_HOT_RESET_FLAG_DEV_ID_OWNED: u32 = 2;
 pub const VFIO_GFX_PLANE_TYPE_PROBE: u32 = 1;
 pub const VFIO_GFX_PLANE_TYPE_DMABUF: u32 = 2;
 pub const VFIO_GFX_PLANE_TYPE_REGION: u32 = 4;
@@ -116,9 +144,37 @@ pub const VFIO_DEVICE_IOEVENTFD_16: u32 = 2;
 pub const VFIO_DEVICE_IOEVENTFD_32: u32 = 4;
 pub const VFIO_DEVICE_IOEVENTFD_64: u32 = 8;
 pub const VFIO_DEVICE_IOEVENTFD_SIZE_MASK: u32 = 15;
+pub const VFIO_DEVICE_FEATURE_MASK: u32 = 65535;
+pub const VFIO_DEVICE_FEATURE_GET: u32 = 65536;
+pub const VFIO_DEVICE_FEATURE_SET: u32 = 131072;
+pub const VFIO_DEVICE_FEATURE_PROBE: u32 = 262144;
+pub const VFIO_DEVICE_FEATURE_PCI_VF_TOKEN: u32 = 0;
+pub const VFIO_MIGRATION_STOP_COPY: u32 = 1;
+pub const VFIO_MIGRATION_P2P: u32 = 2;
+pub const VFIO_MIGRATION_PRE_COPY: u32 = 4;
+pub const VFIO_DEVICE_FEATURE_MIGRATION: u32 = 1;
+pub const VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE: u32 = 2;
+pub const VFIO_DEVICE_FEATURE_LOW_POWER_ENTRY: u32 = 3;
+pub const VFIO_DEVICE_FEATURE_LOW_POWER_ENTRY_WITH_WAKEUP: u32 = 4;
+pub const VFIO_DEVICE_FEATURE_LOW_POWER_EXIT: u32 = 5;
+pub const VFIO_DEVICE_FEATURE_DMA_LOGGING_START: u32 = 6;
+pub const VFIO_DEVICE_FEATURE_DMA_LOGGING_STOP: u32 = 7;
+pub const VFIO_DEVICE_FEATURE_DMA_LOGGING_REPORT: u32 = 8;
+pub const VFIO_DEVICE_FEATURE_MIG_DATA_SIZE: u32 = 9;
 pub const VFIO_IOMMU_INFO_PGSIZES: u32 = 1;
+pub const VFIO_IOMMU_INFO_CAPS: u32 = 2;
+pub const VFIO_IOMMU_TYPE1_INFO_CAP_IOVA_RANGE: u32 = 1;
+pub const VFIO_IOMMU_TYPE1_INFO_CAP_MIGRATION: u32 = 2;
+pub const VFIO_IOMMU_TYPE1_INFO_DMA_AVAIL: u32 = 3;
 pub const VFIO_DMA_MAP_FLAG_READ: u32 = 1;
 pub const VFIO_DMA_MAP_FLAG_WRITE: u32 = 2;
+pub const VFIO_DMA_MAP_FLAG_VADDR: u32 = 4;
+pub const VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP: u32 = 1;
+pub const VFIO_DMA_UNMAP_FLAG_ALL: u32 = 2;
+pub const VFIO_DMA_UNMAP_FLAG_VADDR: u32 = 4;
+pub const VFIO_IOMMU_DIRTY_PAGES_FLAG_START: u32 = 1;
+pub const VFIO_IOMMU_DIRTY_PAGES_FLAG_STOP: u32 = 2;
+pub const VFIO_IOMMU_DIRTY_PAGES_FLAG_GET_BITMAP: u32 = 4;
 pub const VFIO_IOMMU_SPAPR_INFO_DDW: u32 = 1;
 pub const VFIO_EEH_PE_DISABLE: u32 = 0;
 pub const VFIO_EEH_PE_ENABLE: u32 = 1;
@@ -161,7 +217,6 @@ pub type __kernel_key_t = ::std::os::raw::c_int;
 pub type __kernel_mqd_t = ::std::os::raw::c_int;
 pub type __kernel_old_uid_t = ::std::os::raw::c_ushort;
 pub type __kernel_old_gid_t = ::std::os::raw::c_ushort;
-pub type __kernel_old_dev_t = ::std::os::raw::c_ulong;
 pub type __kernel_long_t = ::std::os::raw::c_long;
 pub type __kernel_ulong_t = ::std::os::raw::c_ulong;
 pub type __kernel_ino_t = __kernel_ulong_t;
@@ -174,6 +229,7 @@ pub type __kernel_suseconds_t = __kernel_long_t;
 pub type __kernel_daddr_t = ::std::os::raw::c_int;
 pub type __kernel_uid32_t = ::std::os::raw::c_uint;
 pub type __kernel_gid32_t = ::std::os::raw::c_uint;
+pub type __kernel_old_dev_t = ::std::os::raw::c_uint;
 pub type __kernel_size_t = __kernel_ulong_t;
 pub type __kernel_ssize_t = __kernel_long_t;
 pub type __kernel_ptrdiff_t = __kernel_long_t;
@@ -191,6 +247,7 @@ const _: () = {
 };
 pub type __kernel_off_t = __kernel_long_t;
 pub type __kernel_loff_t = ::std::os::raw::c_longlong;
+pub type __kernel_old_time_t = __kernel_long_t;
 pub type __kernel_time_t = __kernel_long_t;
 pub type __kernel_time64_t = ::std::os::raw::c_longlong;
 pub type __kernel_clock_t = __kernel_long_t;
@@ -199,6 +256,8 @@ pub type __kernel_clockid_t = ::std::os::raw::c_int;
 pub type __kernel_caddr_t = *mut ::std::os::raw::c_char;
 pub type __kernel_uid16_t = ::std::os::raw::c_ushort;
 pub type __kernel_gid16_t = ::std::os::raw::c_ushort;
+pub type __s128 = i128;
+pub type __u128 = u128;
 pub type __le16 = __u16;
 pub type __be16 = __u16;
 pub type __le32 = __u32;
@@ -250,10 +309,12 @@ pub struct vfio_device_info {
     pub flags: __u32,
     pub num_regions: __u32,
     pub num_irqs: __u32,
+    pub cap_offset: __u32,
+    pub pad: __u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of vfio_device_info"][::std::mem::size_of::<vfio_device_info>() - 16usize];
+    ["Size of vfio_device_info"][::std::mem::size_of::<vfio_device_info>() - 24usize];
     ["Alignment of vfio_device_info"][::std::mem::align_of::<vfio_device_info>() - 4usize];
     ["Offset of field: vfio_device_info::argsz"]
         [::std::mem::offset_of!(vfio_device_info, argsz) - 0usize];
@@ -263,6 +324,30 @@ const _: () = {
         [::std::mem::offset_of!(vfio_device_info, num_regions) - 8usize];
     ["Offset of field: vfio_device_info::num_irqs"]
         [::std::mem::offset_of!(vfio_device_info, num_irqs) - 12usize];
+    ["Offset of field: vfio_device_info::cap_offset"]
+        [::std::mem::offset_of!(vfio_device_info, cap_offset) - 16usize];
+    ["Offset of field: vfio_device_info::pad"]
+        [::std::mem::offset_of!(vfio_device_info, pad) - 20usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_info_cap_pci_atomic_comp {
+    pub header: vfio_info_cap_header,
+    pub flags: __u32,
+    pub reserved: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_info_cap_pci_atomic_comp"]
+        [::std::mem::size_of::<vfio_device_info_cap_pci_atomic_comp>() - 16usize];
+    ["Alignment of vfio_device_info_cap_pci_atomic_comp"]
+        [::std::mem::align_of::<vfio_device_info_cap_pci_atomic_comp>() - 4usize];
+    ["Offset of field: vfio_device_info_cap_pci_atomic_comp::header"]
+        [::std::mem::offset_of!(vfio_device_info_cap_pci_atomic_comp, header) - 0usize];
+    ["Offset of field: vfio_device_info_cap_pci_atomic_comp::flags"]
+        [::std::mem::offset_of!(vfio_device_info_cap_pci_atomic_comp, flags) - 8usize];
+    ["Offset of field: vfio_device_info_cap_pci_atomic_comp::reserved"]
+        [::std::mem::offset_of!(vfio_device_info_cap_pci_atomic_comp, reserved) - 12usize];
 };
 #[doc = " VFIO_DEVICE_GET_REGION_INFO - _IOWR(VFIO_TYPE, VFIO_BASE + 8,\n\t\t\t\t       struct vfio_region_info)\n\n Retrieve information about a device region.  Caller provides\n struct vfio_region_info with index value set.  Caller sets argsz.\n Implementation of region mapping is bus driver specific.  This is\n intended to describe MMIO, I/O port, as well as bus specific\n regions (ex. PCI config space).  Zero sized regions may be used\n to describe unimplemented regions (ex. unimplemented PCI BARs).\n Return: 0 on success, -errno on failure."]
 #[repr(C)]
@@ -382,6 +467,32 @@ const _: () = {
 };
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_migration_info {
+    pub device_state: __u32,
+    pub reserved: __u32,
+    pub pending_bytes: __u64,
+    pub data_offset: __u64,
+    pub data_size: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_migration_info"]
+        [::std::mem::size_of::<vfio_device_migration_info>() - 32usize];
+    ["Alignment of vfio_device_migration_info"]
+        [::std::mem::align_of::<vfio_device_migration_info>() - 8usize];
+    ["Offset of field: vfio_device_migration_info::device_state"]
+        [::std::mem::offset_of!(vfio_device_migration_info, device_state) - 0usize];
+    ["Offset of field: vfio_device_migration_info::reserved"]
+        [::std::mem::offset_of!(vfio_device_migration_info, reserved) - 4usize];
+    ["Offset of field: vfio_device_migration_info::pending_bytes"]
+        [::std::mem::offset_of!(vfio_device_migration_info, pending_bytes) - 8usize];
+    ["Offset of field: vfio_device_migration_info::data_offset"]
+        [::std::mem::offset_of!(vfio_device_migration_info, data_offset) - 16usize];
+    ["Offset of field: vfio_device_migration_info::data_size"]
+        [::std::mem::offset_of!(vfio_device_migration_info, data_size) - 24usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_region_info_cap_nvlink2_ssatgt {
     pub header: vfio_info_cap_header,
     pub tgt: __u64,
@@ -417,7 +528,7 @@ const _: () = {
     ["Offset of field: vfio_region_info_cap_nvlink2_lnkspd::__pad"]
         [::std::mem::offset_of!(vfio_region_info_cap_nvlink2_lnkspd, __pad) - 12usize];
 };
-#[doc = " VFIO_DEVICE_GET_IRQ_INFO - _IOWR(VFIO_TYPE, VFIO_BASE + 9,\n\t\t\t\t    struct vfio_irq_info)\n\n Retrieve information about a device IRQ.  Caller provides\n struct vfio_irq_info with index value set.  Caller sets argsz.\n Implementation of IRQ mapping is bus driver specific.  Indexes\n using multiple IRQs are primarily intended to support MSI-like\n interrupt blocks.  Zero count irq blocks may be used to describe\n unimplemented interrupt types.\n\n The EVENTFD flag indicates the interrupt index supports eventfd based\n signaling.\n\n The MASKABLE flags indicates the index supports MASK and UNMASK\n actions described below.\n\n AUTOMASKED indicates that after signaling, the interrupt line is\n automatically masked by VFIO and the user needs to unmask the line\n to receive new interrupts.  This is primarily intended to distinguish\n level triggered interrupts.\n\n The NORESIZE flag indicates that the interrupt lines within the index\n are setup as a set and new subindexes cannot be enabled without first\n disabling the entire index.  This is used for interrupts like PCI MSI\n and MSI-X where the driver may only use a subset of the available\n indexes, but VFIO needs to enable a specific number of vectors\n upfront.  In the case of MSI-X, where the user can enable MSI-X and\n then add and unmask vectors, it's up to userspace to make the decision\n whether to allocate the maximum supported number of vectors or tear\n down setup and incrementally increase the vectors as each is enabled."]
+#[doc = " VFIO_DEVICE_GET_IRQ_INFO - _IOWR(VFIO_TYPE, VFIO_BASE + 9,\n\t\t\t\t    struct vfio_irq_info)\n\n Retrieve information about a device IRQ.  Caller provides\n struct vfio_irq_info with index value set.  Caller sets argsz.\n Implementation of IRQ mapping is bus driver specific.  Indexes\n using multiple IRQs are primarily intended to support MSI-like\n interrupt blocks.  Zero count irq blocks may be used to describe\n unimplemented interrupt types.\n\n The EVENTFD flag indicates the interrupt index supports eventfd based\n signaling.\n\n The MASKABLE flags indicates the index supports MASK and UNMASK\n actions described below.\n\n AUTOMASKED indicates that after signaling, the interrupt line is\n automatically masked by VFIO and the user needs to unmask the line\n to receive new interrupts.  This is primarily intended to distinguish\n level triggered interrupts.\n\n The NORESIZE flag indicates that the interrupt lines within the index\n are setup as a set and new subindexes cannot be enabled without first\n disabling the entire index.  This is used for interrupts like PCI MSI\n and MSI-X where the driver may only use a subset of the available\n indexes, but VFIO needs to enable a specific number of vectors\n upfront.  In the case of MSI-X, where the user can enable MSI-X and\n then add and unmask vectors, it's up to userspace to make the decision\n whether to allocate the maximum supported number of vectors or tear\n down setup and incrementally increase the vectors as each is enabled.\n Absence of the NORESIZE flag indicates that vectors can be enabled\n and disabled dynamically without impacting other vectors within the\n index."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_irq_info {
@@ -483,16 +594,52 @@ pub const VFIO_CCW_CONFIG_REGION_INDEX: _bindgen_ty_3 = 0;
 pub const VFIO_CCW_NUM_REGIONS: _bindgen_ty_3 = 1;
 pub type _bindgen_ty_3 = ::std::os::raw::c_uint;
 pub const VFIO_CCW_IO_IRQ_INDEX: _bindgen_ty_4 = 0;
-pub const VFIO_CCW_NUM_IRQS: _bindgen_ty_4 = 1;
+pub const VFIO_CCW_CRW_IRQ_INDEX: _bindgen_ty_4 = 1;
+pub const VFIO_CCW_REQ_IRQ_INDEX: _bindgen_ty_4 = 2;
+pub const VFIO_CCW_NUM_IRQS: _bindgen_ty_4 = 3;
 pub type _bindgen_ty_4 = ::std::os::raw::c_uint;
-#[doc = " VFIO_DEVICE_GET_PCI_HOT_RESET_INFO - _IORW(VFIO_TYPE, VFIO_BASE + 12,\n\t\t\t\t\t      struct vfio_pci_hot_reset_info)\n\n Return: 0 on success, -errno on failure:\n\t-enospc = insufficient buffer, -enodev = unsupported for device."]
+pub const VFIO_AP_REQ_IRQ_INDEX: _bindgen_ty_5 = 0;
+pub const VFIO_AP_NUM_IRQS: _bindgen_ty_5 = 1;
+pub type _bindgen_ty_5 = ::std::os::raw::c_uint;
+#[doc = " VFIO_DEVICE_GET_PCI_HOT_RESET_INFO - _IOWR(VFIO_TYPE, VFIO_BASE + 12,\n\t\t\t\t\t      struct vfio_pci_hot_reset_info)\n\n This command is used to query the affected devices in the hot reset for\n a given device.\n\n This command always reports the segment, bus, and devfn information for\n each affected device, and selectively reports the group_id or devid per\n the way how the calling device is opened.\n\n\t- If the calling device is opened via the traditional group/container\n\t  API, group_id is reported.  User should check if it has owned all\n\t  the affected devices and provides a set of group fds to prove the\n\t  ownership in VFIO_DEVICE_PCI_HOT_RESET ioctl.\n\n\t- If the calling device is opened as a cdev, devid is reported.\n\t  Flag VFIO_PCI_HOT_RESET_FLAG_DEV_ID is set to indicate this\n\t  data type.  All the affected devices should be represented in\n\t  the dev_set, ex. bound to a vfio driver, and also be owned by\n\t  this interface which is determined by the following conditions:\n\t  1) Has a valid devid within the iommufd_ctx of the calling device.\n\t     Ownership cannot be determined across separate iommufd_ctx and\n\t     the cdev calling conventions do not support a proof-of-ownership\n\t     model as provided in the legacy group interface.  In this case\n\t     valid devid with value greater than zero is provided in the return\n\t     structure.\n\t  2) Does not have a valid devid within the iommufd_ctx of the calling\n\t     device, but belongs to the same IOMMU group as the calling device\n\t     or another opened device that has a valid devid within the\n\t     iommufd_ctx of the calling device.  This provides implicit ownership\n\t     for devices within the same DMA isolation context.  In this case\n\t     the devid value of VFIO_PCI_DEVID_OWNED is provided in the return\n\t     structure.\n\n\t  A devid value of VFIO_PCI_DEVID_NOT_OWNED is provided in the return\n\t  structure for affected devices where device is NOT represented in the\n\t  dev_set or ownership is not available.  Such devices prevent the use\n\t  of VFIO_DEVICE_PCI_HOT_RESET ioctl outside of the proof-of-ownership\n\t  calling conventions (ie. via legacy group accessed devices).  Flag\n\t  VFIO_PCI_HOT_RESET_FLAG_DEV_ID_OWNED would be set when all the\n\t  affected devices are represented in the dev_set and also owned by\n\t  the user.  This flag is available only when\n\t  flag VFIO_PCI_HOT_RESET_FLAG_DEV_ID is set, otherwise reserved.\n\t  When set, user could invoke VFIO_DEVICE_PCI_HOT_RESET with a zero\n\t  length fd array on the calling device as the ownership is validated\n\t  by iommufd_ctx.\n\n Return: 0 on success, -errno on failure:\n\t-enospc = insufficient buffer, -enodev = unsupported for device."]
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
+#[derive(Copy, Clone)]
 pub struct vfio_pci_dependent_device {
-    pub group_id: __u32,
+    pub __bindgen_anon_1: vfio_pci_dependent_device__bindgen_ty_1,
     pub segment: __u16,
     pub bus: __u8,
     pub devfn: __u8,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union vfio_pci_dependent_device__bindgen_ty_1 {
+    pub group_id: __u32,
+    pub devid: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_pci_dependent_device__bindgen_ty_1"]
+        [::std::mem::size_of::<vfio_pci_dependent_device__bindgen_ty_1>() - 4usize];
+    ["Alignment of vfio_pci_dependent_device__bindgen_ty_1"]
+        [::std::mem::align_of::<vfio_pci_dependent_device__bindgen_ty_1>() - 4usize];
+    ["Offset of field: vfio_pci_dependent_device__bindgen_ty_1::group_id"]
+        [::std::mem::offset_of!(vfio_pci_dependent_device__bindgen_ty_1, group_id) - 0usize];
+    ["Offset of field: vfio_pci_dependent_device__bindgen_ty_1::devid"]
+        [::std::mem::offset_of!(vfio_pci_dependent_device__bindgen_ty_1, devid) - 0usize];
+};
+impl Default for vfio_pci_dependent_device__bindgen_ty_1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl ::std::fmt::Debug for vfio_pci_dependent_device__bindgen_ty_1 {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write!(f, "vfio_pci_dependent_device__bindgen_ty_1 {{ union }}")
+    }
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
@@ -500,8 +647,6 @@ const _: () = {
         [::std::mem::size_of::<vfio_pci_dependent_device>() - 8usize];
     ["Alignment of vfio_pci_dependent_device"]
         [::std::mem::align_of::<vfio_pci_dependent_device>() - 4usize];
-    ["Offset of field: vfio_pci_dependent_device::group_id"]
-        [::std::mem::offset_of!(vfio_pci_dependent_device, group_id) - 0usize];
     ["Offset of field: vfio_pci_dependent_device::segment"]
         [::std::mem::offset_of!(vfio_pci_dependent_device, segment) - 4usize];
     ["Offset of field: vfio_pci_dependent_device::bus"]
@@ -509,8 +654,21 @@ const _: () = {
     ["Offset of field: vfio_pci_dependent_device::devfn"]
         [::std::mem::offset_of!(vfio_pci_dependent_device, devfn) - 7usize];
 };
+impl Default for vfio_pci_dependent_device {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl ::std::fmt::Debug for vfio_pci_dependent_device {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write ! (f , "vfio_pci_dependent_device {{ __bindgen_anon_1: {:?}, segment: {:?}, bus: {:?}, devfn: {:?} }}" , self . __bindgen_anon_1 , self . segment , self . bus , self . devfn)
+    }
+}
 #[repr(C)]
-#[derive(Debug, Default)]
 pub struct vfio_pci_hot_reset_info {
     pub argsz: __u32,
     pub flags: __u32,
@@ -531,7 +689,25 @@ const _: () = {
     ["Offset of field: vfio_pci_hot_reset_info::devices"]
         [::std::mem::offset_of!(vfio_pci_hot_reset_info, devices) - 12usize];
 };
-#[doc = " VFIO_DEVICE_PCI_HOT_RESET - _IOW(VFIO_TYPE, VFIO_BASE + 13,\n\t\t\t\t    struct vfio_pci_hot_reset)\n\n Return: 0 on success, -errno on failure."]
+impl Default for vfio_pci_hot_reset_info {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl ::std::fmt::Debug for vfio_pci_hot_reset_info {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write!(
+            f,
+            "vfio_pci_hot_reset_info {{ argsz: {:?}, flags: {:?}, count: {:?}, devices: {:?} }}",
+            self.argsz, self.flags, self.count, self.devices
+        )
+    }
+}
+#[doc = " VFIO_DEVICE_PCI_HOT_RESET - _IOW(VFIO_TYPE, VFIO_BASE + 13,\n\t\t\t\t    struct vfio_pci_hot_reset)\n\n A PCI hot reset results in either a bus or slot reset which may affect\n other devices sharing the bus/slot.  The calling user must have\n ownership of the full set of affected devices as determined by the\n VFIO_DEVICE_GET_PCI_HOT_RESET_INFO ioctl.\n\n When called on a device file descriptor acquired through the vfio\n group interface, the user is required to provide proof of ownership\n of those affected devices via the group_fds array in struct\n vfio_pci_hot_reset.\n\n When called on a direct cdev opened vfio device, the flags field of\n struct vfio_pci_hot_reset_info reports the ownership status of the\n affected devices and this ioctl must be called with an empty group_fds\n array.  See above INFO ioctl definition for ownership requirements.\n\n Mixed usage of legacy groups and cdevs across the set of affected\n devices is not supported.\n\n Return: 0 on success, -errno on failure."]
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct vfio_pci_hot_reset {
@@ -676,6 +852,241 @@ const _: () = {
     ["Offset of field: vfio_device_ioeventfd::fd"]
         [::std::mem::offset_of!(vfio_device_ioeventfd, fd) - 24usize];
 };
+#[doc = " VFIO_DEVICE_FEATURE - _IOWR(VFIO_TYPE, VFIO_BASE + 17,\n\t\t\t       struct vfio_device_feature)\n\n Get, set, or probe feature data of the device.  The feature is selected\n using the FEATURE_MASK portion of the flags field.  Support for a feature\n can be probed by setting both the FEATURE_MASK and PROBE bits.  A probe\n may optionally include the GET and/or SET bits to determine read vs write\n access of the feature respectively.  Probing a feature will return success\n if the feature is supported and all of the optionally indicated GET/SET\n methods are supported.  The format of the data portion of the structure is\n specific to the given feature.  The data portion is not required for\n probing.  GET and SET are mutually exclusive, except for use with PROBE.\n\n Return 0 on success, -errno on failure."]
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct vfio_device_feature {
+    pub argsz: __u32,
+    pub flags: __u32,
+    pub data: __IncompleteArrayField<__u8>,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_feature"][::std::mem::size_of::<vfio_device_feature>() - 8usize];
+    ["Alignment of vfio_device_feature"][::std::mem::align_of::<vfio_device_feature>() - 4usize];
+    ["Offset of field: vfio_device_feature::argsz"]
+        [::std::mem::offset_of!(vfio_device_feature, argsz) - 0usize];
+    ["Offset of field: vfio_device_feature::flags"]
+        [::std::mem::offset_of!(vfio_device_feature, flags) - 4usize];
+    ["Offset of field: vfio_device_feature::data"]
+        [::std::mem::offset_of!(vfio_device_feature, data) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_bind_iommufd {
+    pub argsz: __u32,
+    pub flags: __u32,
+    pub iommufd: __s32,
+    pub out_devid: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_bind_iommufd"]
+        [::std::mem::size_of::<vfio_device_bind_iommufd>() - 16usize];
+    ["Alignment of vfio_device_bind_iommufd"]
+        [::std::mem::align_of::<vfio_device_bind_iommufd>() - 4usize];
+    ["Offset of field: vfio_device_bind_iommufd::argsz"]
+        [::std::mem::offset_of!(vfio_device_bind_iommufd, argsz) - 0usize];
+    ["Offset of field: vfio_device_bind_iommufd::flags"]
+        [::std::mem::offset_of!(vfio_device_bind_iommufd, flags) - 4usize];
+    ["Offset of field: vfio_device_bind_iommufd::iommufd"]
+        [::std::mem::offset_of!(vfio_device_bind_iommufd, iommufd) - 8usize];
+    ["Offset of field: vfio_device_bind_iommufd::out_devid"]
+        [::std::mem::offset_of!(vfio_device_bind_iommufd, out_devid) - 12usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_attach_iommufd_pt {
+    pub argsz: __u32,
+    pub flags: __u32,
+    pub pt_id: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_attach_iommufd_pt"]
+        [::std::mem::size_of::<vfio_device_attach_iommufd_pt>() - 12usize];
+    ["Alignment of vfio_device_attach_iommufd_pt"]
+        [::std::mem::align_of::<vfio_device_attach_iommufd_pt>() - 4usize];
+    ["Offset of field: vfio_device_attach_iommufd_pt::argsz"]
+        [::std::mem::offset_of!(vfio_device_attach_iommufd_pt, argsz) - 0usize];
+    ["Offset of field: vfio_device_attach_iommufd_pt::flags"]
+        [::std::mem::offset_of!(vfio_device_attach_iommufd_pt, flags) - 4usize];
+    ["Offset of field: vfio_device_attach_iommufd_pt::pt_id"]
+        [::std::mem::offset_of!(vfio_device_attach_iommufd_pt, pt_id) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_detach_iommufd_pt {
+    pub argsz: __u32,
+    pub flags: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_detach_iommufd_pt"]
+        [::std::mem::size_of::<vfio_device_detach_iommufd_pt>() - 8usize];
+    ["Alignment of vfio_device_detach_iommufd_pt"]
+        [::std::mem::align_of::<vfio_device_detach_iommufd_pt>() - 4usize];
+    ["Offset of field: vfio_device_detach_iommufd_pt::argsz"]
+        [::std::mem::offset_of!(vfio_device_detach_iommufd_pt, argsz) - 0usize];
+    ["Offset of field: vfio_device_detach_iommufd_pt::flags"]
+        [::std::mem::offset_of!(vfio_device_detach_iommufd_pt, flags) - 4usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_feature_migration {
+    pub flags: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_feature_migration"]
+        [::std::mem::size_of::<vfio_device_feature_migration>() - 8usize];
+    ["Alignment of vfio_device_feature_migration"]
+        [::std::mem::align_of::<vfio_device_feature_migration>() - 8usize];
+    ["Offset of field: vfio_device_feature_migration::flags"]
+        [::std::mem::offset_of!(vfio_device_feature_migration, flags) - 0usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_feature_mig_state {
+    pub device_state: __u32,
+    pub data_fd: __s32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_feature_mig_state"]
+        [::std::mem::size_of::<vfio_device_feature_mig_state>() - 8usize];
+    ["Alignment of vfio_device_feature_mig_state"]
+        [::std::mem::align_of::<vfio_device_feature_mig_state>() - 4usize];
+    ["Offset of field: vfio_device_feature_mig_state::device_state"]
+        [::std::mem::offset_of!(vfio_device_feature_mig_state, device_state) - 0usize];
+    ["Offset of field: vfio_device_feature_mig_state::data_fd"]
+        [::std::mem::offset_of!(vfio_device_feature_mig_state, data_fd) - 4usize];
+};
+pub const vfio_device_mig_state_VFIO_DEVICE_STATE_ERROR: vfio_device_mig_state = 0;
+pub const vfio_device_mig_state_VFIO_DEVICE_STATE_STOP: vfio_device_mig_state = 1;
+pub const vfio_device_mig_state_VFIO_DEVICE_STATE_RUNNING: vfio_device_mig_state = 2;
+pub const vfio_device_mig_state_VFIO_DEVICE_STATE_STOP_COPY: vfio_device_mig_state = 3;
+pub const vfio_device_mig_state_VFIO_DEVICE_STATE_RESUMING: vfio_device_mig_state = 4;
+pub const vfio_device_mig_state_VFIO_DEVICE_STATE_RUNNING_P2P: vfio_device_mig_state = 5;
+pub const vfio_device_mig_state_VFIO_DEVICE_STATE_PRE_COPY: vfio_device_mig_state = 6;
+pub const vfio_device_mig_state_VFIO_DEVICE_STATE_PRE_COPY_P2P: vfio_device_mig_state = 7;
+pub type vfio_device_mig_state = ::std::os::raw::c_uint;
+#[doc = " VFIO_MIG_GET_PRECOPY_INFO - _IO(VFIO_TYPE, VFIO_BASE + 21)\n\n This ioctl is used on the migration data FD in the precopy phase of the\n migration data transfer. It returns an estimate of the current data sizes\n remaining to be transferred. It allows the user to judge when it is\n appropriate to leave PRE_COPY for STOP_COPY.\n\n This ioctl is valid only in PRE_COPY states and kernel driver should\n return -EINVAL from any other migration state.\n\n The vfio_precopy_info data structure returned by this ioctl provides\n estimates of data available from the device during the PRE_COPY states.\n This estimate is split into two categories, initial_bytes and\n dirty_bytes.\n\n The initial_bytes field indicates the amount of initial precopy\n data available from the device. This field should have a non-zero initial\n value and decrease as migration data is read from the device.\n It is recommended to leave PRE_COPY for STOP_COPY only after this field\n reaches zero. Leaving PRE_COPY earlier might make things slower.\n\n The dirty_bytes field tracks device state changes relative to data\n previously retrieved.  This field starts at zero and may increase as\n the internal device state is modified or decrease as that modified\n state is read from the device.\n\n Userspace may use the combination of these fields to estimate the\n potential data size available during the PRE_COPY phases, as well as\n trends relative to the rate the device is dirtying its internal\n state, but these fields are not required to have any bearing relative\n to the data size available during the STOP_COPY phase.\n\n Drivers have a lot of flexibility in when and what they transfer during the\n PRE_COPY phase, and how they report this from VFIO_MIG_GET_PRECOPY_INFO.\n\n During pre-copy the migration data FD has a temporary \"end of stream\" that is\n reached when both initial_bytes and dirty_byte are zero. For instance, this\n may indicate that the device is idle and not currently dirtying any internal\n state. When read() is done on this temporary end of stream the kernel driver\n should return ENOMSG from read(). Userspace can wait for more data (which may\n never come) by using poll.\n\n Once in STOP_COPY the migration data FD has a permanent end of stream\n signaled in the usual way by read() always returning 0 and poll always\n returning readable. ENOMSG may not be returned in STOP_COPY.\n Support for this ioctl is mandatory if a driver claims to support\n VFIO_MIGRATION_PRE_COPY.\n\n Return: 0 on success, -1 and errno set on failure."]
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_precopy_info {
+    pub argsz: __u32,
+    pub flags: __u32,
+    pub initial_bytes: __u64,
+    pub dirty_bytes: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_precopy_info"][::std::mem::size_of::<vfio_precopy_info>() - 24usize];
+    ["Alignment of vfio_precopy_info"][::std::mem::align_of::<vfio_precopy_info>() - 8usize];
+    ["Offset of field: vfio_precopy_info::argsz"]
+        [::std::mem::offset_of!(vfio_precopy_info, argsz) - 0usize];
+    ["Offset of field: vfio_precopy_info::flags"]
+        [::std::mem::offset_of!(vfio_precopy_info, flags) - 4usize];
+    ["Offset of field: vfio_precopy_info::initial_bytes"]
+        [::std::mem::offset_of!(vfio_precopy_info, initial_bytes) - 8usize];
+    ["Offset of field: vfio_precopy_info::dirty_bytes"]
+        [::std::mem::offset_of!(vfio_precopy_info, dirty_bytes) - 16usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_low_power_entry_with_wakeup {
+    pub wakeup_eventfd: __s32,
+    pub reserved: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_low_power_entry_with_wakeup"]
+        [::std::mem::size_of::<vfio_device_low_power_entry_with_wakeup>() - 8usize];
+    ["Alignment of vfio_device_low_power_entry_with_wakeup"]
+        [::std::mem::align_of::<vfio_device_low_power_entry_with_wakeup>() - 4usize];
+    ["Offset of field: vfio_device_low_power_entry_with_wakeup::wakeup_eventfd"]
+        [::std::mem::offset_of!(vfio_device_low_power_entry_with_wakeup, wakeup_eventfd) - 0usize];
+    ["Offset of field: vfio_device_low_power_entry_with_wakeup::reserved"]
+        [::std::mem::offset_of!(vfio_device_low_power_entry_with_wakeup, reserved) - 4usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_feature_dma_logging_control {
+    pub page_size: __u64,
+    pub num_ranges: __u32,
+    pub __reserved: __u32,
+    pub ranges: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_feature_dma_logging_control"]
+        [::std::mem::size_of::<vfio_device_feature_dma_logging_control>() - 24usize];
+    ["Alignment of vfio_device_feature_dma_logging_control"]
+        [::std::mem::align_of::<vfio_device_feature_dma_logging_control>() - 8usize];
+    ["Offset of field: vfio_device_feature_dma_logging_control::page_size"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_control, page_size) - 0usize];
+    ["Offset of field: vfio_device_feature_dma_logging_control::num_ranges"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_control, num_ranges) - 8usize];
+    ["Offset of field: vfio_device_feature_dma_logging_control::__reserved"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_control, __reserved) - 12usize];
+    ["Offset of field: vfio_device_feature_dma_logging_control::ranges"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_control, ranges) - 16usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_feature_dma_logging_range {
+    pub iova: __u64,
+    pub length: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_feature_dma_logging_range"]
+        [::std::mem::size_of::<vfio_device_feature_dma_logging_range>() - 16usize];
+    ["Alignment of vfio_device_feature_dma_logging_range"]
+        [::std::mem::align_of::<vfio_device_feature_dma_logging_range>() - 8usize];
+    ["Offset of field: vfio_device_feature_dma_logging_range::iova"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_range, iova) - 0usize];
+    ["Offset of field: vfio_device_feature_dma_logging_range::length"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_range, length) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_feature_dma_logging_report {
+    pub iova: __u64,
+    pub length: __u64,
+    pub page_size: __u64,
+    pub bitmap: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_feature_dma_logging_report"]
+        [::std::mem::size_of::<vfio_device_feature_dma_logging_report>() - 32usize];
+    ["Alignment of vfio_device_feature_dma_logging_report"]
+        [::std::mem::align_of::<vfio_device_feature_dma_logging_report>() - 8usize];
+    ["Offset of field: vfio_device_feature_dma_logging_report::iova"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_report, iova) - 0usize];
+    ["Offset of field: vfio_device_feature_dma_logging_report::length"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_report, length) - 8usize];
+    ["Offset of field: vfio_device_feature_dma_logging_report::page_size"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_report, page_size) - 16usize];
+    ["Offset of field: vfio_device_feature_dma_logging_report::bitmap"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_logging_report, bitmap) - 24usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_feature_mig_data_size {
+    pub stop_copy_length: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_feature_mig_data_size"]
+        [::std::mem::size_of::<vfio_device_feature_mig_data_size>() - 8usize];
+    ["Alignment of vfio_device_feature_mig_data_size"]
+        [::std::mem::align_of::<vfio_device_feature_mig_data_size>() - 8usize];
+    ["Offset of field: vfio_device_feature_mig_data_size::stop_copy_length"]
+        [::std::mem::offset_of!(vfio_device_feature_mig_data_size, stop_copy_length) - 0usize];
+};
 #[doc = " VFIO_IOMMU_GET_INFO - _IOR(VFIO_TYPE, VFIO_BASE + 12, struct vfio_iommu_info)\n\n Retrieve information about the IOMMU object. Fills in provided\n struct vfio_iommu_info. Caller sets argsz.\n\n XXX Should we do these by CHECK_EXTENSION too?"]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
@@ -683,10 +1094,12 @@ pub struct vfio_iommu_type1_info {
     pub argsz: __u32,
     pub flags: __u32,
     pub iova_pgsizes: __u64,
+    pub cap_offset: __u32,
+    pub pad: __u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of vfio_iommu_type1_info"][::std::mem::size_of::<vfio_iommu_type1_info>() - 16usize];
+    ["Size of vfio_iommu_type1_info"][::std::mem::size_of::<vfio_iommu_type1_info>() - 24usize];
     ["Alignment of vfio_iommu_type1_info"]
         [::std::mem::align_of::<vfio_iommu_type1_info>() - 8usize];
     ["Offset of field: vfio_iommu_type1_info::argsz"]
@@ -695,8 +1108,92 @@ const _: () = {
         [::std::mem::offset_of!(vfio_iommu_type1_info, flags) - 4usize];
     ["Offset of field: vfio_iommu_type1_info::iova_pgsizes"]
         [::std::mem::offset_of!(vfio_iommu_type1_info, iova_pgsizes) - 8usize];
+    ["Offset of field: vfio_iommu_type1_info::cap_offset"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info, cap_offset) - 16usize];
+    ["Offset of field: vfio_iommu_type1_info::pad"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info, pad) - 20usize];
 };
-#[doc = " VFIO_IOMMU_MAP_DMA - _IOW(VFIO_TYPE, VFIO_BASE + 13, struct vfio_dma_map)\n\n Map process virtual addresses to IO virtual addresses using the\n provided struct vfio_dma_map. Caller sets argsz. READ &/ WRITE required."]
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_iova_range {
+    pub start: __u64,
+    pub end: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_iova_range"][::std::mem::size_of::<vfio_iova_range>() - 16usize];
+    ["Alignment of vfio_iova_range"][::std::mem::align_of::<vfio_iova_range>() - 8usize];
+    ["Offset of field: vfio_iova_range::start"]
+        [::std::mem::offset_of!(vfio_iova_range, start) - 0usize];
+    ["Offset of field: vfio_iova_range::end"]
+        [::std::mem::offset_of!(vfio_iova_range, end) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct vfio_iommu_type1_info_cap_iova_range {
+    pub header: vfio_info_cap_header,
+    pub nr_iovas: __u32,
+    pub reserved: __u32,
+    pub iova_ranges: __IncompleteArrayField<vfio_iova_range>,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_iommu_type1_info_cap_iova_range"]
+        [::std::mem::size_of::<vfio_iommu_type1_info_cap_iova_range>() - 16usize];
+    ["Alignment of vfio_iommu_type1_info_cap_iova_range"]
+        [::std::mem::align_of::<vfio_iommu_type1_info_cap_iova_range>() - 8usize];
+    ["Offset of field: vfio_iommu_type1_info_cap_iova_range::header"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info_cap_iova_range, header) - 0usize];
+    ["Offset of field: vfio_iommu_type1_info_cap_iova_range::nr_iovas"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info_cap_iova_range, nr_iovas) - 8usize];
+    ["Offset of field: vfio_iommu_type1_info_cap_iova_range::reserved"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info_cap_iova_range, reserved) - 12usize];
+    ["Offset of field: vfio_iommu_type1_info_cap_iova_range::iova_ranges"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info_cap_iova_range, iova_ranges) - 16usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_iommu_type1_info_cap_migration {
+    pub header: vfio_info_cap_header,
+    pub flags: __u32,
+    pub pgsize_bitmap: __u64,
+    pub max_dirty_bitmap_size: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_iommu_type1_info_cap_migration"]
+        [::std::mem::size_of::<vfio_iommu_type1_info_cap_migration>() - 32usize];
+    ["Alignment of vfio_iommu_type1_info_cap_migration"]
+        [::std::mem::align_of::<vfio_iommu_type1_info_cap_migration>() - 8usize];
+    ["Offset of field: vfio_iommu_type1_info_cap_migration::header"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info_cap_migration, header) - 0usize];
+    ["Offset of field: vfio_iommu_type1_info_cap_migration::flags"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info_cap_migration, flags) - 8usize];
+    ["Offset of field: vfio_iommu_type1_info_cap_migration::pgsize_bitmap"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info_cap_migration, pgsize_bitmap) - 16usize];
+    ["Offset of field: vfio_iommu_type1_info_cap_migration::max_dirty_bitmap_size"][::std::mem::offset_of!(
+        vfio_iommu_type1_info_cap_migration,
+        max_dirty_bitmap_size
+    ) - 24usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_iommu_type1_info_dma_avail {
+    pub header: vfio_info_cap_header,
+    pub avail: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_iommu_type1_info_dma_avail"]
+        [::std::mem::size_of::<vfio_iommu_type1_info_dma_avail>() - 12usize];
+    ["Alignment of vfio_iommu_type1_info_dma_avail"]
+        [::std::mem::align_of::<vfio_iommu_type1_info_dma_avail>() - 4usize];
+    ["Offset of field: vfio_iommu_type1_info_dma_avail::header"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info_dma_avail, header) - 0usize];
+    ["Offset of field: vfio_iommu_type1_info_dma_avail::avail"]
+        [::std::mem::offset_of!(vfio_iommu_type1_info_dma_avail, avail) - 8usize];
+};
+#[doc = " VFIO_IOMMU_MAP_DMA - _IOW(VFIO_TYPE, VFIO_BASE + 13, struct vfio_dma_map)\n\n Map process virtual addresses to IO virtual addresses using the\n provided struct vfio_dma_map. Caller sets argsz. READ &/ WRITE required.\n\n If flags & VFIO_DMA_MAP_FLAG_VADDR, update the base vaddr for iova. The vaddr\n must have previously been invalidated with VFIO_DMA_UNMAP_FLAG_VADDR.  To\n maintain memory consistency within the user application, the updated vaddr\n must address the same memory object as originally mapped.  Failure to do so\n will result in user memory corruption and/or device misbehavior.  iova and\n size must match those in the original MAP_DMA call.  Protection is not\n changed, and the READ & WRITE flags must be 0."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_iommu_type1_dma_map {
@@ -723,14 +1220,39 @@ const _: () = {
     ["Offset of field: vfio_iommu_type1_dma_map::size"]
         [::std::mem::offset_of!(vfio_iommu_type1_dma_map, size) - 24usize];
 };
-#[doc = " VFIO_IOMMU_UNMAP_DMA - _IOWR(VFIO_TYPE, VFIO_BASE + 14,\n\t\t\t\t\t\t\tstruct vfio_dma_unmap)\n\n Unmap IO virtual addresses using the provided struct vfio_dma_unmap.\n Caller sets argsz.  The actual unmapped size is returned in the size\n field.  No guarantee is made to the user that arbitrary unmaps of iova\n or size different from those used in the original mapping call will\n succeed."]
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct vfio_bitmap {
+    pub pgsize: __u64,
+    pub size: __u64,
+    pub data: *mut __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_bitmap"][::std::mem::size_of::<vfio_bitmap>() - 24usize];
+    ["Alignment of vfio_bitmap"][::std::mem::align_of::<vfio_bitmap>() - 8usize];
+    ["Offset of field: vfio_bitmap::pgsize"][::std::mem::offset_of!(vfio_bitmap, pgsize) - 0usize];
+    ["Offset of field: vfio_bitmap::size"][::std::mem::offset_of!(vfio_bitmap, size) - 8usize];
+    ["Offset of field: vfio_bitmap::data"][::std::mem::offset_of!(vfio_bitmap, data) - 16usize];
+};
+impl Default for vfio_bitmap {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[doc = " VFIO_IOMMU_UNMAP_DMA - _IOWR(VFIO_TYPE, VFIO_BASE + 14,\n\t\t\t\t\t\t\tstruct vfio_dma_unmap)\n\n Unmap IO virtual addresses using the provided struct vfio_dma_unmap.\n Caller sets argsz.  The actual unmapped size is returned in the size\n field.  No guarantee is made to the user that arbitrary unmaps of iova\n or size different from those used in the original mapping call will\n succeed.\n\n VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP should be set to get the dirty bitmap\n before unmapping IO virtual addresses. When this flag is set, the user must\n provide a struct vfio_bitmap in data[]. User must provide zero-allocated\n memory via vfio_bitmap.data and its size in the vfio_bitmap.size field.\n A bit in the bitmap represents one page, of user provided page size in\n vfio_bitmap.pgsize field, consecutively starting from iova offset. Bit set\n indicates that the page at that offset from iova is dirty. A Bitmap of the\n pages in the range of unmapped size is returned in the user-provided\n vfio_bitmap.data.\n\n If flags & VFIO_DMA_UNMAP_FLAG_ALL, unmap all addresses.  iova and size\n must be 0.  This cannot be combined with the get-dirty-bitmap flag.\n\n If flags & VFIO_DMA_UNMAP_FLAG_VADDR, do not unmap, but invalidate host\n virtual addresses in the iova range.  DMA to already-mapped pages continues.\n Groups may not be added to the container while any addresses are invalid.\n This cannot be combined with the get-dirty-bitmap flag."]
+#[repr(C)]
+#[derive(Debug, Default)]
 pub struct vfio_iommu_type1_dma_unmap {
     pub argsz: __u32,
     pub flags: __u32,
     pub iova: __u64,
     pub size: __u64,
+    pub data: __IncompleteArrayField<__u8>,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
@@ -746,7 +1268,59 @@ const _: () = {
         [::std::mem::offset_of!(vfio_iommu_type1_dma_unmap, iova) - 8usize];
     ["Offset of field: vfio_iommu_type1_dma_unmap::size"]
         [::std::mem::offset_of!(vfio_iommu_type1_dma_unmap, size) - 16usize];
+    ["Offset of field: vfio_iommu_type1_dma_unmap::data"]
+        [::std::mem::offset_of!(vfio_iommu_type1_dma_unmap, data) - 24usize];
 };
+#[doc = " VFIO_IOMMU_DIRTY_PAGES - _IOWR(VFIO_TYPE, VFIO_BASE + 17,\n                                     struct vfio_iommu_type1_dirty_bitmap)\n IOCTL is used for dirty pages logging.\n Caller should set flag depending on which operation to perform, details as\n below:\n\n Calling the IOCTL with VFIO_IOMMU_DIRTY_PAGES_FLAG_START flag set, instructs\n the IOMMU driver to log pages that are dirtied or potentially dirtied by\n the device; designed to be used when a migration is in progress. Dirty pages\n are logged until logging is disabled by user application by calling the IOCTL\n with VFIO_IOMMU_DIRTY_PAGES_FLAG_STOP flag.\n\n Calling the IOCTL with VFIO_IOMMU_DIRTY_PAGES_FLAG_STOP flag set, instructs\n the IOMMU driver to stop logging dirtied pages.\n\n Calling the IOCTL with VFIO_IOMMU_DIRTY_PAGES_FLAG_GET_BITMAP flag set\n returns the dirty pages bitmap for IOMMU container for a given IOVA range.\n The user must specify the IOVA range and the pgsize through the structure\n vfio_iommu_type1_dirty_bitmap_get in the data[] portion. This interface\n supports getting a bitmap of the smallest supported pgsize only and can be\n modified in future to get a bitmap of any specified supported pgsize. The\n user must provide a zeroed memory area for the bitmap memory and specify its\n size in bitmap.size. One bit is used to represent one page consecutively\n starting from iova offset. The user should provide page size in bitmap.pgsize\n field. A bit set in the bitmap indicates that the page at that offset from\n iova is dirty. The caller must set argsz to a value including the size of\n structure vfio_iommu_type1_dirty_bitmap_get, but excluding the size of the\n actual bitmap. If dirty pages logging is not enabled, an error will be\n returned.\n\n Only one of the flags _START, _STOP and _GET may be specified at a time.\n"]
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct vfio_iommu_type1_dirty_bitmap {
+    pub argsz: __u32,
+    pub flags: __u32,
+    pub data: __IncompleteArrayField<__u8>,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_iommu_type1_dirty_bitmap"]
+        [::std::mem::size_of::<vfio_iommu_type1_dirty_bitmap>() - 8usize];
+    ["Alignment of vfio_iommu_type1_dirty_bitmap"]
+        [::std::mem::align_of::<vfio_iommu_type1_dirty_bitmap>() - 4usize];
+    ["Offset of field: vfio_iommu_type1_dirty_bitmap::argsz"]
+        [::std::mem::offset_of!(vfio_iommu_type1_dirty_bitmap, argsz) - 0usize];
+    ["Offset of field: vfio_iommu_type1_dirty_bitmap::flags"]
+        [::std::mem::offset_of!(vfio_iommu_type1_dirty_bitmap, flags) - 4usize];
+    ["Offset of field: vfio_iommu_type1_dirty_bitmap::data"]
+        [::std::mem::offset_of!(vfio_iommu_type1_dirty_bitmap, data) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct vfio_iommu_type1_dirty_bitmap_get {
+    pub iova: __u64,
+    pub size: __u64,
+    pub bitmap: vfio_bitmap,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_iommu_type1_dirty_bitmap_get"]
+        [::std::mem::size_of::<vfio_iommu_type1_dirty_bitmap_get>() - 40usize];
+    ["Alignment of vfio_iommu_type1_dirty_bitmap_get"]
+        [::std::mem::align_of::<vfio_iommu_type1_dirty_bitmap_get>() - 8usize];
+    ["Offset of field: vfio_iommu_type1_dirty_bitmap_get::iova"]
+        [::std::mem::offset_of!(vfio_iommu_type1_dirty_bitmap_get, iova) - 0usize];
+    ["Offset of field: vfio_iommu_type1_dirty_bitmap_get::size"]
+        [::std::mem::offset_of!(vfio_iommu_type1_dirty_bitmap_get, size) - 8usize];
+    ["Offset of field: vfio_iommu_type1_dirty_bitmap_get::bitmap"]
+        [::std::mem::offset_of!(vfio_iommu_type1_dirty_bitmap_get, bitmap) - 16usize];
+};
+impl Default for vfio_iommu_type1_dirty_bitmap_get {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_iommu_spapr_tce_ddw_info {

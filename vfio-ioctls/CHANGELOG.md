@@ -1,3 +1,16 @@
+# Upcoming Release
+
+## Changed
+
+- Functions that map memory into the VFIO device are now `unsafe`.
+  The caller of these functions are responsible for enforcing
+  various complex, documented invariants.  These functions were
+  never actually safe to begin with, but in the past they had
+  (incorrectly) not been marked as `unsafe`.
+
+  In the future a high-level safe API will be provided that avoids
+  these requirements at the cost of some flexibility.
+
 # [v0.5.0]
 
 ## Changed

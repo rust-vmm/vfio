@@ -403,7 +403,7 @@ impl PciConfiguration {
 
     /// Writes a 32bit dword to `offset`. `offset` must be 32bit aligned.
     fn write_dword(&mut self, offset: usize, value: u32) {
-        if offset % 4 != 0 {
+        if !offset.is_multiple_of(4) {
             warn!("bad PCI config dword write offset {offset}");
             return;
         }
@@ -494,7 +494,7 @@ impl PciConfiguration {
             return Err(Error::BarSizeInvalid(config.size));
         }
 
-        if config.addr % config.size != 0 {
+        if !config.addr.is_multiple_of(config.size) {
             return Err(Error::BarAlignmentInvalid(config.addr, config.size));
         }
 

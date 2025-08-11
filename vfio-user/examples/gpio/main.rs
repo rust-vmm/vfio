@@ -89,8 +89,8 @@ impl ServerBackend for TestBackend {
         if region == VFIO_PCI_CONFIG_REGION_INDEX {
             if len > 4 {
                 // For larger accesses require multiple of 4 and natural
-                assert!(len % 4 == 0);
-                assert!(offset % 4 == 0);
+                assert!(len.is_multiple_of(4));
+                assert!(offset.is_multiple_of(4));
                 let mut reg_idx = offset as usize / 4;
                 let mut data_offset = 0;
                 while data_offset < len {
@@ -115,7 +115,7 @@ impl ServerBackend for TestBackend {
         } else if region == VFIO_PCI_BAR2_REGION_INDEX && offset == 0 {
             info!("gpio value read: count = {}", self.count);
             self.count += 1;
-            if self.count.0 % 3 == 0 {
+            if self.count.0.is_multiple_of(3) {
                 data[0] = 1;
                 if let Some(irq) = &mut self.irq {
                     info!("Triggering interrupt for count = {}", self.count);

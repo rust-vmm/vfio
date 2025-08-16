@@ -1,3 +1,9 @@
+## Upcoming release
+
+### Changed
+
+- [[111]](https://github.com/rust-vmm/vfio/pull/111) vfio-ioctls: upgrade mshv-bindings and mshv-ioctls
+
 # [v0.5.0]
 
 ## Changed

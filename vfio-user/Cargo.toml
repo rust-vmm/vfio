@@ -1,6 +1,6 @@
 [package]
 name = "vfio_user"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["The Cloud Hypervisor Authors"]
 edition = "2021"
 license = "Apache-2.0"
@@ -18,7 +18,7 @@ serde = { version = "1.0.151", features = ["rc"] }
 serde_derive = "1.0.149"
 serde_json = "1.0.93"
 thiserror = { workspace = true }
-vfio-bindings = { version = "=0.5.0", path = "../vfio-bindings", features = [
+vfio-bindings = { version = "=0.6.0", path = "../vfio-bindings", features = [
   "fam-wrappers",
 ] }
 vm-memory = { version = "0.16.0", features = [

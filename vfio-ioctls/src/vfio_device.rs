@@ -346,6 +346,15 @@ impl VfioContainer {
         })
     }
 
+    /// Get vfio group num in the container.
+    ///
+    /// The vfio kernel driver will unmap and unpin all of the guest memory
+    /// when group_list is empty, so it's useful to let the owner know how many
+    /// group left in our list to decide to do dma map again.
+    pub fn vfio_group_num(&self) -> usize {
+        self.groups.lock().unwrap().len()
+    }
+
     #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
     fn device_set_group(&self, group: &VfioGroup, add: bool) -> Result<()> {
         let group_fd_ptr = &group.as_raw_fd() as *const i32;

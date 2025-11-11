@@ -1,6 +1,6 @@
 [package]
 name = "vfio-ioctls"
-version = "0.5.1"
+version = "0.5.2"
 authors = [
   "The Cloud Hypervisor Authors",
   "Liu Jiang <gerry@linux.alibaba.com>",
@@ -27,7 +27,7 @@ log = "0.4"
 kvm-bindings = { version = "0.14.0", optional = true }
 kvm-ioctls = { version = "0.24.0", optional = true }
 thiserror = { workspace = true }
-vfio-bindings = { version = "=0.6.0", path = "../vfio-bindings" }
+vfio-bindings = { version = "=0.6.1", path = "../vfio-bindings" }
 vm-memory = { version = "0.16.0", features = ["backend-mmap"] }
 vmm-sys-util = { workspace = true }
 mshv-bindings = { version = "0.6.5", features = [

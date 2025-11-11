@@ -2,7 +2,16 @@
 
 ## Changed
 
+## Added
+
+## Fixed
+
+# [v0.5.2]
+
+## Changed
+
 - [[114]](https://github.com/rust-vmm/vfio/pull/114)  Cargo.toml: Update deps to latest version
+- [[123]] (https://github.com/rust-vmm/vfio/pull/123) Upgrade mshv-bindings and mshv-ioctls to 0.6.5
 
 ## Added
 

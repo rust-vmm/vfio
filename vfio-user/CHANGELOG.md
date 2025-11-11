@@ -1,13 +1,15 @@
-## [Unreleased]
+## Upcoming release
 
-### Added
+## Changed
+
+## Added
+
+## Fixed
+
+# [v0.1.2]
 
 ### Changed
 - [[114]](https://github.com/rust-vmm/vfio/pull/114) Cargo.toml: Update deps to latest version
-
-### Deprecated
-
-### Fixed
 
 # [v0.1.1]
 

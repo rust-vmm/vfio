@@ -3,6 +3,9 @@
 ## Changed
 
 ## Added
+- [[106]](https://github.com/rust-vmm/vfio/pull/106) Added new public APIs
+	to support multiple VFIO interfaces: both legacy mode (using
+	containers and groups) and cdev mode (using iommufd)
 
 ## Fixed
 

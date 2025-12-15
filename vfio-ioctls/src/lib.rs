@@ -57,6 +57,8 @@
 #[macro_use]
 extern crate vmm_sys_util;
 
+#[cfg(feature = "vfio_cdev")]
+use iommufd_ioctls::IommufdError;
 use std::io;
 use thiserror::Error;
 use vmm_sys_util::errno::Error as SysError;
@@ -70,6 +72,9 @@ pub use vfio_device::{
     VfioRegionInfoCap, VfioRegionInfoCapNvlink2Lnkspd, VfioRegionInfoCapNvlink2Ssatgt,
     VfioRegionInfoCapSparseMmap, VfioRegionInfoCapType, VfioRegionSparseMmapArea,
 };
+
+#[cfg(feature = "vfio_cdev")]
+pub use vfio_device::VfioIommufd;
 
 /// Error codes for VFIO operations.
 #[derive(Debug, Error)]
@@ -150,6 +155,18 @@ pub enum VfioError {
         "failed to remove the association of the vfio device and its current associated IOAS: {0}"
     )]
     VfioDeviceDetachIommufdPt(#[source] SysError),
+    #[cfg(feature = "vfio_cdev")]
+    #[error("failed to new VfioIommufd")]
+    NewVfioIommufd(#[source] IommufdError),
+    #[cfg(feature = "vfio_cdev")]
+    #[error("invalid 'vfio_dev' folder")]
+    InvalidVfioDev,
+    #[cfg(feature = "vfio_cdev")]
+    #[error("failed to open device cdev")]
+    OpenDeviceCdev(#[source] io::Error),
+    #[cfg(feature = "vfio_cdev")]
+    #[error("failed iommufd ioctl")]
+    IommufdIoctlError(#[source] IommufdError),
 }
 
 /// Specialized version of `Result` for VFIO subsystem.

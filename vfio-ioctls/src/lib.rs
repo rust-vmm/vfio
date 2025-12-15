@@ -139,6 +139,17 @@ pub enum VfioError {
     InvalidDmaUnmapSize,
     #[error("failed to downcast VfioOps")]
     DowncastVfioOps,
+    #[cfg(feature = "vfio_cdev")]
+    #[error("failed to bind the vfio device to the specified iommufd: {0}")]
+    VfioDeviceBindIommufd(#[source] SysError),
+    #[cfg(feature = "vfio_cdev")]
+    #[error("failed to associate the vfio device with an IOAS within the bound iommufd: {0}")]
+    VfioDeviceAttachIommufdPt(#[source] SysError),
+    #[cfg(feature = "vfio_cdev")]
+    #[error(
+        "failed to remove the association of the vfio device and its current associated IOAS: {0}"
+    )]
+    VfioDeviceDetachIommufdPt(#[source] SysError),
 }
 
 /// Specialized version of `Result` for VFIO subsystem.

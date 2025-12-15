@@ -14,6 +14,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use byteorder::{ByteOrder, NativeEndian};
+#[cfg(feature = "vfio_cdev")]
+use iommufd_bindings::*;
+#[cfg(feature = "vfio_cdev")]
+use iommufd_ioctls::IommuFd;
 use log::{debug, error, warn};
 use vfio_bindings::bindings::vfio::*;
 use vm_memory::{Address, GuestMemory, GuestMemoryRegion, MemoryRegionAddress};
@@ -229,6 +233,11 @@ impl VfioCommon {
         } else {
             Ok(())
         }
+    }
+
+    #[cfg(all(feature = "vfio_cdev", test))]
+    fn device_set_fd(&self, _dev_fd: RawFd, _add: bool) -> Result<()> {
+        Ok(())
     }
 }
 
@@ -543,6 +552,124 @@ impl VfioGroup {
 impl AsRawFd for VfioGroup {
     fn as_raw_fd(&self) -> RawFd {
         self.group.as_raw_fd()
+    }
+}
+
+/// A safe wrapper over vfio devices backed by vfio cdev using iommufd
+#[cfg(feature = "vfio_cdev")]
+pub struct VfioIommufd {
+    pub(crate) iommufd: Arc<IommuFd>,
+    pub(crate) ioas_id: u32,
+    common: VfioCommon,
+}
+
+#[cfg(feature = "vfio_cdev")]
+impl VfioIommufd {
+    /// Create a wrapper object for vfio devices backed by vfio cdev
+    /// using iommufd.
+    ///
+    /// # Arguments
+    /// * `iommufd`: the iommufd to be bound with the VFIO device
+    /// * `ioas_id`: the IOAS id to be bound with the VFIO device
+    /// * `device_fd`: An optional file handle of the hypervisor VFIO device.
+    pub fn new(
+        iommufd: Arc<IommuFd>,
+        ioas_id: Option<u32>,
+        device_fd: Option<VfioContainerDeviceHandle>,
+    ) -> Result<Self> {
+        let ioas_id = match ioas_id {
+            Some(ioas_id) => ioas_id,
+            None => {
+                let mut alloc_data = iommu_ioas_alloc {
+                    size: mem::size_of::<iommu_ioas_alloc>() as u32,
+                    flags: 0,
+                    out_ioas_id: 0,
+                };
+
+                iommufd
+                    .as_ref()
+                    .alloc_iommu_ioas(&mut alloc_data)
+                    .map_err(VfioError::NewVfioIommufd)?;
+
+                alloc_data.out_ioas_id
+            }
+        };
+
+        let vfio_iommufd = VfioIommufd {
+            iommufd,
+            ioas_id,
+            common: VfioCommon { device_fd },
+        };
+
+        Ok(vfio_iommufd)
+    }
+
+    /// Map a region of user space memory (e.g. guest memory) into an IO
+    /// address space managed by IOMMU hardware to enable DMA for
+    /// associated VFIO devices
+    ///
+    /// # Parameters
+    /// * iova: IO virtual address to map the memory.
+    /// * size: size of the memory region.
+    /// * user_addr: user space address (e.g. host virtual address) for
+    ///   the guest memory region to map.
+    pub fn vfio_dma_map(&self, iova: u64, length: u64, user_addr: u64) -> Result<()> {
+        let dma_map = iommu_ioas_map {
+            size: mem::size_of::<iommu_ioas_map>() as u32,
+            flags: iommufd_ioas_map_flags_IOMMU_IOAS_MAP_READABLE
+                | iommufd_ioas_map_flags_IOMMU_IOAS_MAP_WRITEABLE
+                | iommufd_ioas_map_flags_IOMMU_IOAS_MAP_FIXED_IOVA,
+            ioas_id: self.ioas_id,
+            __reserved: 0,
+            user_va: user_addr,
+            length,
+            iova,
+        };
+
+        self.iommufd
+            .map_iommu_ioas(&dma_map)
+            .map_err(VfioError::IommufdIoctlError)
+    }
+
+    /// Unmap a region of user space memory (e.g. guest memory) from an IO
+    /// address space managed by IOMMU hardware to disable DMA for
+    /// associated VFIO devices
+    ///
+    /// # Parameters
+    /// * iova: IO virtual address to unmap the memory.
+    /// * size: size of the memory region.
+    pub fn vfio_dma_unmap(&self, iova: u64, length: u64) -> Result<()> {
+        let mut dma_unmap = iommu_ioas_unmap {
+            size: mem::size_of::<iommu_ioas_unmap>() as u32,
+            ioas_id: self.ioas_id,
+            iova,
+            length,
+        };
+
+        self.iommufd
+            .unmap_iommu_ioas(&mut dma_unmap)
+            .map_err(VfioError::IommufdIoctlError)?;
+
+        if dma_unmap.length != length {
+            return Err(VfioError::InvalidDmaUnmapSize);
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "vfio_cdev")]
+impl VfioOps for VfioIommufd {
+    fn vfio_dma_map(&self, iova: u64, size: u64, user_addr: u64) -> Result<()> {
+        self.vfio_dma_map(iova, size, user_addr)
+    }
+
+    fn vfio_dma_unmap(&self, iova: u64, size: u64) -> Result<()> {
+        self.vfio_dma_unmap(iova, size)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -903,21 +1030,83 @@ impl VfioDevice {
         group_str.parse::<u32>().map_err(|_| VfioError::InvalidPath)
     }
 
+    #[cfg(feature = "vfio_cdev")]
+    fn get_device_cdev_from_path(sysfspath: &Path) -> Result<File> {
+        // For the folder structure of vfio cdev, refer:
+        // https://docs.kernel.org/driver-api/vfio.html#device-cdev-example
+        let vfio_dev_path = sysfspath.join("vfio-dev");
+
+        let file_list: Vec<PathBuf> = vfio_dev_path
+            .read_dir()
+            .map_err(|_| VfioError::InvalidVfioDev)?
+            .filter_map(|entry| Some(entry.ok()?.path()))
+            .collect();
+
+        if file_list.len() == 1 && file_list[0].is_dir() {
+            let cdev_name = file_list[0].file_name().ok_or(VfioError::InvalidVfioDev)?;
+            let device_cdev_path: PathBuf = Path::new("/dev/vfio/devices/").join(cdev_name);
+
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(device_cdev_path)
+                .map_err(VfioError::OpenDeviceCdev)
+        } else {
+            Err(VfioError::InvalidVfioDev)
+        }
+    }
+
+    fn get_device_info(sysfspath: &Path, vfio_ops: Arc<dyn VfioOps>) -> Result<VfioDeviceInfo> {
+        if let Some(vfio_container) = vfio_ops.as_any().downcast_ref::<VfioContainer>() {
+            let group_id = Self::get_group_id_from_path(sysfspath)?;
+            let group = vfio_container.get_group(group_id)?;
+
+            return group.get_device(sysfspath);
+        }
+
+        #[cfg(feature = "vfio_cdev")]
+        if let Some(vfio_iommufd) = vfio_ops.as_any().downcast_ref::<VfioIommufd>() {
+            // Open the vfio cdev file
+            let device = Self::get_device_cdev_from_path(sysfspath)?;
+
+            // Add the vfio cdev file to VFIO-KVM device tracking
+            vfio_iommufd
+                .common
+                .device_set_fd(device.as_raw_fd(), true)?;
+
+            // Bind the VFIO device to the iommufd file
+            let mut bind = vfio_device_bind_iommufd {
+                argsz: mem::size_of::<vfio_device_bind_iommufd>() as u32,
+                flags: 0,
+                iommufd: vfio_iommufd.iommufd.as_raw_fd(),
+                out_devid: 0,
+            };
+            vfio_syscall::bind_device_iommufd(&device, &mut bind)?;
+
+            // Associate the vfio device to the IOAS within the bound iommufd
+            let mut attach_data = vfio_device_attach_iommufd_pt {
+                argsz: mem::size_of::<vfio_device_attach_iommufd_pt>() as u32,
+                flags: 0,
+                pt_id: vfio_iommufd.ioas_id,
+            };
+            vfio_syscall::attach_device_iommufd_pt(&device, &mut attach_data)?;
+
+            let dev_info = VfioDeviceInfo::get_device_info(&device)?;
+            let dev_info = VfioDeviceInfo::new(device, &dev_info);
+
+            return Ok(dev_info);
+        }
+
+        Err(VfioError::DowncastVfioOps)
+    }
+
     /// Create a new vfio device, then guest read/write on this device could be transferred into kernel vfio.
     ///
     /// # Parameters
     /// * `sysfspath`: specify the vfio device path in sys file system.
     /// * `vfio_ops`: the vfio device wrapper object that the new VFIO device object will bind to.
     pub fn new(sysfspath: &Path, vfio_ops: Arc<dyn VfioOps>) -> Result<Self> {
-        let device_info =
-            if let Some(vfio_container) = vfio_ops.as_any().downcast_ref::<VfioContainer>() {
-                let group_id = Self::get_group_id_from_path(sysfspath)?;
-                let group = vfio_container.get_group(group_id)?;
-                group.get_device(sysfspath)?
-            } else {
-                return Err(VfioError::DowncastVfioOps);
-            };
-
+        let device_info = Self::get_device_info(sysfspath, vfio_ops.clone())?;
         let regions = device_info.get_regions()?;
         let irqs = device_info.get_irqs()?;
 
@@ -1290,6 +1479,27 @@ impl Drop for VfioDevice {
             let group_id = Self::get_group_id_from_path(&self.sysfspath).unwrap();
             let group = container.get_group(group_id).unwrap();
             container.put_group(group);
+        }
+
+        #[cfg(feature = "vfio_cdev")]
+        if let Some(vfio_iommufd) = self.vfio_ops.as_any().downcast_ref::<VfioIommufd>() {
+            // Remove the association of the vfio device and its current associated IOAS
+            let detach_data = vfio_device_detach_iommufd_pt {
+                argsz: mem::size_of::<vfio_device_detach_iommufd_pt>() as u32,
+                flags: 0,
+            };
+            vfio_syscall::detach_device_iommufd_pt(&self.device, &detach_data).unwrap();
+
+            // Remove the vfio cdev file from VFIO-KVM device tracking
+            vfio_iommufd
+                .common
+                .device_set_fd(self.device.as_raw_fd(), false)
+                .unwrap();
+
+            // SAFETY: we own the File object.
+            unsafe {
+                ManuallyDrop::drop(&mut self.device);
+            }
         }
     }
 }

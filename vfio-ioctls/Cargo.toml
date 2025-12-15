@@ -19,7 +19,7 @@ features = ["kvm"]
 default = ["kvm"]
 kvm = ["kvm-ioctls", "kvm-bindings"]
 mshv = ["mshv-ioctls", "mshv-bindings"]
-vfio_cdev = []
+vfio_cdev = ["iommufd-bindings", "iommufd-ioctls", "kvm"]
 
 [dependencies]
 byteorder = "1.2.1"
@@ -36,3 +36,5 @@ mshv-bindings = { version = "0.6.5", features = [
   "fam-wrappers",
 ], optional = true }
 mshv-ioctls = { version = "0.6.5", optional = true }
+iommufd-bindings = { git = "https://github.com/cloud-hypervisor/iommufd", rev = "083c016", optional = true }
+iommufd-ioctls = { git = "https://github.com/cloud-hypervisor/iommufd", rev = "083c016", optional = true }

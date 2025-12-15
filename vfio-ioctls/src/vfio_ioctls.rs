@@ -42,6 +42,20 @@ ioctl_io_nr!(
 );
 ioctl_io_nr!(VFIO_DEVICE_GET_GFX_DMABUF, VFIO_TYPE.into(), VFIO_BASE + 15);
 ioctl_io_nr!(VFIO_DEVICE_IOEVENTFD, VFIO_TYPE.into(), VFIO_BASE + 16);
+#[cfg(feature = "vfio_cdev")]
+ioctl_io_nr!(VFIO_DEVICE_BIND_IOMMUFD, VFIO_TYPE.into(), VFIO_BASE + 18);
+#[cfg(feature = "vfio_cdev")]
+ioctl_io_nr!(
+    VFIO_DEVICE_ATTACH_IOMMUFD_PT,
+    VFIO_TYPE.into(),
+    VFIO_BASE + 19
+);
+#[cfg(feature = "vfio_cdev")]
+ioctl_io_nr!(
+    VFIO_DEVICE_DETACH_IOMMUFD_PT,
+    VFIO_TYPE.into(),
+    VFIO_BASE + 20
+);
 ioctl_io_nr!(VFIO_IOMMU_GET_INFO, VFIO_TYPE.into(), VFIO_BASE + 12);
 ioctl_io_nr!(VFIO_IOMMU_MAP_DMA, VFIO_TYPE.into(), VFIO_BASE + 13);
 ioctl_io_nr!(VFIO_IOMMU_UNMAP_DMA, VFIO_TYPE.into(), VFIO_BASE + 14);
@@ -242,6 +256,62 @@ pub(crate) mod vfio_syscall {
             } else {
                 Ok(())
             }
+        }
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    pub(crate) fn bind_device_iommufd(
+        vfio_cdev: &File,
+        bind: &mut vfio_device_bind_iommufd,
+    ) -> Result<()> {
+        // SAFETY:
+        // 1. The file descriptor provided by 'vfio_cdev' is valid and open.
+        // 2. The 'bind' points to initialized memory with expected data structure,
+        // and remains valid for the duration of syscall.
+        // 3. The return value is checked.
+        let ret = unsafe { ioctl_with_mut_ref(vfio_cdev, VFIO_DEVICE_BIND_IOMMUFD(), bind) };
+        if ret < 0 {
+            Err(VfioError::VfioDeviceBindIommufd(SysError::last()))
+        } else {
+            Ok(())
+        }
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    pub(crate) fn attach_device_iommufd_pt(
+        vfio_cdev: &File,
+        attach_data: &mut vfio_device_attach_iommufd_pt,
+    ) -> Result<()> {
+        // SAFETY:
+        // 1. The file descriptor provided by 'vfio_cdev' is valid and open.
+        // 2. The 'attach_data' points to initialized memory with expected data structure,
+        // and remains valid for the duration of syscall.
+        // 3. The return value is checked.
+        let ret =
+            unsafe { ioctl_with_mut_ref(vfio_cdev, VFIO_DEVICE_ATTACH_IOMMUFD_PT(), attach_data) };
+        if ret < 0 {
+            Err(VfioError::VfioDeviceAttachIommufdPt(SysError::last()))
+        } else {
+            Ok(())
+        }
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    pub(crate) fn detach_device_iommufd_pt(
+        vfio_cdev: &File,
+        detach_data: &vfio_device_detach_iommufd_pt,
+    ) -> Result<()> {
+        // SAFETY:
+        // 1. The file descriptor provided by 'vfio_cdev' is valid and open.
+        // 2. The 'detach_data' points to initialized memory with expected data structure,
+        // and remains valid for the duration of syscall.
+        // 3. The return value is checked.
+        let ret =
+            unsafe { ioctl_with_ref(vfio_cdev, VFIO_DEVICE_DETACH_IOMMUFD_PT(), detach_data) };
+        if ret < 0 {
+            Err(VfioError::VfioDeviceDetachIommufdPt(SysError::last()))
+        } else {
+            Ok(())
         }
     }
 }
@@ -498,6 +568,30 @@ pub(crate) mod vfio_syscall {
             pad: 0,
         }
     }
+
+    #[cfg(feature = "vfio_cdev")]
+    pub(crate) fn bind_device_iommufd(
+        _vfio_cdev: &File,
+        _bind: &mut vfio_device_bind_iommufd,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    pub(crate) fn attach_device_iommufd_pt(
+        _vfio_cdev: &File,
+        _attach_data: &mut vfio_device_attach_iommufd_pt,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    pub(crate) fn detach_device_iommufd_pt(
+        _vfio_cdev: &File,
+        _detach_data: &vfio_device_detach_iommufd_pt,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -520,5 +614,11 @@ mod tests {
         assert_eq!(VFIO_DEVICE_RESET(), 15215);
         assert_eq!(VFIO_DEVICE_IOEVENTFD(), 15220);
         assert_eq!(VFIO_IOMMU_DISABLE(), 15220);
+        #[cfg(feature = "vfio_cdev")]
+        assert_eq!(VFIO_DEVICE_BIND_IOMMUFD(), 15222);
+        #[cfg(feature = "vfio_cdev")]
+        assert_eq!(VFIO_DEVICE_ATTACH_IOMMUFD_PT(), 15223);
+        #[cfg(feature = "vfio_cdev")]
+        assert_eq!(VFIO_DEVICE_DETACH_IOMMUFD_PT(), 15224);
     }
 }

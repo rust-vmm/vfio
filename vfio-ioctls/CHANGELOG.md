@@ -2,6 +2,8 @@
 
 ## Changed
 
+- [[128]](https://github.com/rust-vmm/vfio/pull/128) Support vm-memory 0.17
+
 ## Added
 
 - [[127]](https://github.com/rust-vmm/vfio/pull/127) vfio-ioctls: Add support for vfio cdev and iommufd

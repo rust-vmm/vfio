@@ -285,7 +285,6 @@ const _: () = {
     ["Offset of field: vfio_info_cap_header::next"]
         [::std::mem::offset_of!(vfio_info_cap_header, next) - 4usize];
 };
-#[doc = " VFIO_GROUP_GET_STATUS - _IOR(VFIO_TYPE, VFIO_BASE + 3,\n\t\t\t\t\t\tstruct vfio_group_status)\n\n Retrieve information about the group.  Fills in provided\n struct vfio_group_info.  Caller sets argsz.\n Return: 0 on succes, -errno on failure.\n Availability: Always"]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_group_status {
@@ -301,7 +300,6 @@ const _: () = {
     ["Offset of field: vfio_group_status::flags"]
         [::std::mem::offset_of!(vfio_group_status, flags) - 4usize];
 };
-#[doc = " VFIO_DEVICE_GET_INFO - _IOR(VFIO_TYPE, VFIO_BASE + 7,\n\t\t\t\t\t\tstruct vfio_device_info)\n\n Retrieve information about the device.  Fills in provided\n struct vfio_device_info.  Caller sets argsz.\n Return: 0 on success, -errno on failure."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_device_info {
@@ -349,7 +347,6 @@ const _: () = {
     ["Offset of field: vfio_device_info_cap_pci_atomic_comp::reserved"]
         [::std::mem::offset_of!(vfio_device_info_cap_pci_atomic_comp, reserved) - 12usize];
 };
-#[doc = " VFIO_DEVICE_GET_REGION_INFO - _IOWR(VFIO_TYPE, VFIO_BASE + 8,\n\t\t\t\t       struct vfio_region_info)\n\n Retrieve information about a device region.  Caller provides\n struct vfio_region_info with index value set.  Caller sets argsz.\n Implementation of region mapping is bus driver specific.  This is\n intended to describe MMIO, I/O port, as well as bus specific\n regions (ex. PCI config space).  Zero sized regions may be used\n to describe unimplemented regions (ex. unimplemented PCI BARs).\n Return: 0 on success, -errno on failure."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_region_info {
@@ -437,7 +434,6 @@ const _: () = {
     ["Offset of field: vfio_region_info_cap_type::subtype"]
         [::std::mem::offset_of!(vfio_region_info_cap_type, subtype) - 12usize];
 };
-#[doc = " struct vfio_region_gfx_edid - EDID region layout.\n\n Set display link state and EDID blob.\n\n The EDID blob has monitor information such as brand, name, serial\n number, physical size, supported video modes and more.\n\n This special region allows userspace (typically qemu) set a virtual\n EDID for the virtual monitor, which allows a flexible display\n configuration.\n\n For the edid blob spec look here:\n    https://en.wikipedia.org/wiki/Extended_Display_Identification_Data\n\n On linux systems you can find the EDID blob in sysfs:\n    /sys/class/drm/${card}/${connector}/edid\n\n You can use the edid-decode ulility (comes with xorg-x11-utils) to\n decode the EDID blob.\n\n @edid_offset: location of the edid blob, relative to the\n               start of the region (readonly).\n @edid_max_size: max size of the edid blob (readonly).\n @edid_size: actual edid size (read/write).\n @link_state: display link state (read/write).\n VFIO_DEVICE_GFX_LINK_STATE_UP: Monitor is turned on.\n VFIO_DEVICE_GFX_LINK_STATE_DOWN: Monitor is turned off.\n @max_xres: max display width (0 == no limitation, readonly).\n @max_yres: max display height (0 == no limitation, readonly).\n\n EDID update protocol:\n   (1) set link-state to down.\n   (2) update edid blob and size.\n   (3) set link-state to up."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_region_gfx_edid {
@@ -528,7 +524,6 @@ const _: () = {
     ["Offset of field: vfio_region_info_cap_nvlink2_lnkspd::__pad"]
         [::std::mem::offset_of!(vfio_region_info_cap_nvlink2_lnkspd, __pad) - 12usize];
 };
-#[doc = " VFIO_DEVICE_GET_IRQ_INFO - _IOWR(VFIO_TYPE, VFIO_BASE + 9,\n\t\t\t\t    struct vfio_irq_info)\n\n Retrieve information about a device IRQ.  Caller provides\n struct vfio_irq_info with index value set.  Caller sets argsz.\n Implementation of IRQ mapping is bus driver specific.  Indexes\n using multiple IRQs are primarily intended to support MSI-like\n interrupt blocks.  Zero count irq blocks may be used to describe\n unimplemented interrupt types.\n\n The EVENTFD flag indicates the interrupt index supports eventfd based\n signaling.\n\n The MASKABLE flags indicates the index supports MASK and UNMASK\n actions described below.\n\n AUTOMASKED indicates that after signaling, the interrupt line is\n automatically masked by VFIO and the user needs to unmask the line\n to receive new interrupts.  This is primarily intended to distinguish\n level triggered interrupts.\n\n The NORESIZE flag indicates that the interrupt lines within the index\n are setup as a set and new subindexes cannot be enabled without first\n disabling the entire index.  This is used for interrupts like PCI MSI\n and MSI-X where the driver may only use a subset of the available\n indexes, but VFIO needs to enable a specific number of vectors\n upfront.  In the case of MSI-X, where the user can enable MSI-X and\n then add and unmask vectors, it's up to userspace to make the decision\n whether to allocate the maximum supported number of vectors or tear\n down setup and incrementally increase the vectors as each is enabled.\n Absence of the NORESIZE flag indicates that vectors can be enabled\n and disabled dynamically without impacting other vectors within the\n index."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_irq_info {
@@ -550,7 +545,6 @@ const _: () = {
     ["Offset of field: vfio_irq_info::count"]
         [::std::mem::offset_of!(vfio_irq_info, count) - 12usize];
 };
-#[doc = " VFIO_DEVICE_SET_IRQS - _IOW(VFIO_TYPE, VFIO_BASE + 10, struct vfio_irq_set)\n\n Set signaling, masking, and unmasking of interrupts.  Caller provides\n struct vfio_irq_set with all fields set.  'start' and 'count' indicate\n the range of subindexes being specified.\n\n The DATA flags specify the type of data provided.  If DATA_NONE, the\n operation performs the specified action immediately on the specified\n interrupt(s).  For example, to unmask AUTOMASKED interrupt [0,0]:\n flags = (DATA_NONE|ACTION_UNMASK), index = 0, start = 0, count = 1.\n\n DATA_BOOL allows sparse support for the same on arrays of interrupts.\n For example, to mask interrupts [0,1] and [0,3] (but not [0,2]):\n flags = (DATA_BOOL|ACTION_MASK), index = 0, start = 1, count = 3,\n data = {1,0,1}\n\n DATA_EVENTFD binds the specified ACTION to the provided __s32 eventfd.\n A value of -1 can be used to either de-assign interrupts if already\n assigned or skip un-assigned interrupts.  For example, to set an eventfd\n to be trigger for interrupts [0,0] and [0,2]:\n flags = (DATA_EVENTFD|ACTION_TRIGGER), index = 0, start = 0, count = 3,\n data = {fd1, -1, fd2}\n If index [0,1] is previously set, two count = 1 ioctls calls would be\n required to set [0,0] and [0,2] without changing [0,1].\n\n Once a signaling mechanism is set, DATA_BOOL or DATA_NONE can be used\n with ACTION_TRIGGER to perform kernel level interrupt loopback testing\n from userspace (ie. simulate hardware triggering).\n\n Setting of an event triggering mechanism to userspace for ACTION_TRIGGER\n enables the interrupt index for the device.  Individual subindex interrupts\n can be disabled using the -1 value for DATA_EVENTFD or the index can be\n disabled as a whole with: flags = (DATA_NONE|ACTION_TRIGGER), count = 0.\n\n Note that ACTION_[UN]MASK specify user->kernel signaling (irqfds) while\n ACTION_TRIGGER specifies kernel->user signaling."]
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct vfio_irq_set {
@@ -601,7 +595,6 @@ pub type _bindgen_ty_4 = ::std::os::raw::c_uint;
 pub const VFIO_AP_REQ_IRQ_INDEX: _bindgen_ty_5 = 0;
 pub const VFIO_AP_NUM_IRQS: _bindgen_ty_5 = 1;
 pub type _bindgen_ty_5 = ::std::os::raw::c_uint;
-#[doc = " VFIO_DEVICE_GET_PCI_HOT_RESET_INFO - _IOWR(VFIO_TYPE, VFIO_BASE + 12,\n\t\t\t\t\t      struct vfio_pci_hot_reset_info)\n\n This command is used to query the affected devices in the hot reset for\n a given device.\n\n This command always reports the segment, bus, and devfn information for\n each affected device, and selectively reports the group_id or devid per\n the way how the calling device is opened.\n\n\t- If the calling device is opened via the traditional group/container\n\t  API, group_id is reported.  User should check if it has owned all\n\t  the affected devices and provides a set of group fds to prove the\n\t  ownership in VFIO_DEVICE_PCI_HOT_RESET ioctl.\n\n\t- If the calling device is opened as a cdev, devid is reported.\n\t  Flag VFIO_PCI_HOT_RESET_FLAG_DEV_ID is set to indicate this\n\t  data type.  All the affected devices should be represented in\n\t  the dev_set, ex. bound to a vfio driver, and also be owned by\n\t  this interface which is determined by the following conditions:\n\t  1) Has a valid devid within the iommufd_ctx of the calling device.\n\t     Ownership cannot be determined across separate iommufd_ctx and\n\t     the cdev calling conventions do not support a proof-of-ownership\n\t     model as provided in the legacy group interface.  In this case\n\t     valid devid with value greater than zero is provided in the return\n\t     structure.\n\t  2) Does not have a valid devid within the iommufd_ctx of the calling\n\t     device, but belongs to the same IOMMU group as the calling device\n\t     or another opened device that has a valid devid within the\n\t     iommufd_ctx of the calling device.  This provides implicit ownership\n\t     for devices within the same DMA isolation context.  In this case\n\t     the devid value of VFIO_PCI_DEVID_OWNED is provided in the return\n\t     structure.\n\n\t  A devid value of VFIO_PCI_DEVID_NOT_OWNED is provided in the return\n\t  structure for affected devices where device is NOT represented in the\n\t  dev_set or ownership is not available.  Such devices prevent the use\n\t  of VFIO_DEVICE_PCI_HOT_RESET ioctl outside of the proof-of-ownership\n\t  calling conventions (ie. via legacy group accessed devices).  Flag\n\t  VFIO_PCI_HOT_RESET_FLAG_DEV_ID_OWNED would be set when all the\n\t  affected devices are represented in the dev_set and also owned by\n\t  the user.  This flag is available only when\n\t  flag VFIO_PCI_HOT_RESET_FLAG_DEV_ID is set, otherwise reserved.\n\t  When set, user could invoke VFIO_DEVICE_PCI_HOT_RESET with a zero\n\t  length fd array on the calling device as the ownership is validated\n\t  by iommufd_ctx.\n\n Return: 0 on success, -errno on failure:\n\t-enospc = insufficient buffer, -enodev = unsupported for device."]
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct vfio_pci_dependent_device {
@@ -707,7 +700,6 @@ impl ::std::fmt::Debug for vfio_pci_hot_reset_info {
         )
     }
 }
-#[doc = " VFIO_DEVICE_PCI_HOT_RESET - _IOW(VFIO_TYPE, VFIO_BASE + 13,\n\t\t\t\t    struct vfio_pci_hot_reset)\n\n A PCI hot reset results in either a bus or slot reset which may affect\n other devices sharing the bus/slot.  The calling user must have\n ownership of the full set of affected devices as determined by the\n VFIO_DEVICE_GET_PCI_HOT_RESET_INFO ioctl.\n\n When called on a device file descriptor acquired through the vfio\n group interface, the user is required to provide proof of ownership\n of those affected devices via the group_fds array in struct\n vfio_pci_hot_reset.\n\n When called on a direct cdev opened vfio device, the flags field of\n struct vfio_pci_hot_reset_info reports the ownership status of the\n affected devices and this ioctl must be called with an empty group_fds\n array.  See above INFO ioctl definition for ownership requirements.\n\n Mixed usage of legacy groups and cdevs across the set of affected\n devices is not supported.\n\n Return: 0 on success, -errno on failure."]
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct vfio_pci_hot_reset {
@@ -729,7 +721,6 @@ const _: () = {
     ["Offset of field: vfio_pci_hot_reset::group_fds"]
         [::std::mem::offset_of!(vfio_pci_hot_reset, group_fds) - 12usize];
 };
-#[doc = " VFIO_DEVICE_QUERY_GFX_PLANE - _IOW(VFIO_TYPE, VFIO_BASE + 14,\n                                    struct vfio_device_query_gfx_plane)\n\n Set the drm_plane_type and flags, then retrieve the gfx plane info.\n\n flags supported:\n - VFIO_GFX_PLANE_TYPE_PROBE and VFIO_GFX_PLANE_TYPE_DMABUF are set\n   to ask if the mdev supports dma-buf. 0 on support, -EINVAL on no\n   support for dma-buf.\n - VFIO_GFX_PLANE_TYPE_PROBE and VFIO_GFX_PLANE_TYPE_REGION are set\n   to ask if the mdev supports region. 0 on support, -EINVAL on no\n   support for region.\n - VFIO_GFX_PLANE_TYPE_DMABUF or VFIO_GFX_PLANE_TYPE_REGION is set\n   with each call to query the plane info.\n - Others are invalid and return -EINVAL.\n\n Note:\n 1. Plane could be disabled by guest. In that case, success will be\n    returned with zero-initialized drm_format, size, width and height\n    fields.\n 2. x_hot/y_hot is set to 0xFFFFFFFF if no hotspot information available\n\n Return: 0 on success, -errno on other failure."]
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct vfio_device_gfx_plane_info {
@@ -826,7 +817,6 @@ impl ::std::fmt::Debug for vfio_device_gfx_plane_info {
         write ! (f , "vfio_device_gfx_plane_info {{ argsz: {:?}, flags: {:?}, drm_plane_type: {:?}, drm_format: {:?}, drm_format_mod: {:?}, width: {:?}, height: {:?}, stride: {:?}, size: {:?}, x_pos: {:?}, y_pos: {:?}, x_hot: {:?}, y_hot: {:?}, __bindgen_anon_1: {:?} }}" , self . argsz , self . flags , self . drm_plane_type , self . drm_format , self . drm_format_mod , self . width , self . height , self . stride , self . size , self . x_pos , self . y_pos , self . x_hot , self . y_hot , self . __bindgen_anon_1)
     }
 }
-#[doc = " VFIO_DEVICE_IOEVENTFD - _IOW(VFIO_TYPE, VFIO_BASE + 16,\n                              struct vfio_device_ioeventfd)\n\n Perform a write to the device at the specified device fd offset, with\n the specified data and width when the provided eventfd is triggered.\n vfio bus drivers may not support this for all regions, for all widths,\n or at all.  vfio-pci currently only enables support for BAR regions,\n excluding the MSI-X vector table.\n\n Return: 0 on success, -errno on failure."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_device_ioeventfd {
@@ -852,7 +842,6 @@ const _: () = {
     ["Offset of field: vfio_device_ioeventfd::fd"]
         [::std::mem::offset_of!(vfio_device_ioeventfd, fd) - 24usize];
 };
-#[doc = " VFIO_DEVICE_FEATURE - _IOWR(VFIO_TYPE, VFIO_BASE + 17,\n\t\t\t       struct vfio_device_feature)\n\n Get, set, or probe feature data of the device.  The feature is selected\n using the FEATURE_MASK portion of the flags field.  Support for a feature\n can be probed by setting both the FEATURE_MASK and PROBE bits.  A probe\n may optionally include the GET and/or SET bits to determine read vs write\n access of the feature respectively.  Probing a feature will return success\n if the feature is supported and all of the optionally indicated GET/SET\n methods are supported.  The format of the data portion of the structure is\n specific to the given feature.  The data portion is not required for\n probing.  GET and SET are mutually exclusive, except for use with PROBE.\n\n Return 0 on success, -errno on failure."]
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct vfio_device_feature {
@@ -971,7 +960,6 @@ pub const vfio_device_mig_state_VFIO_DEVICE_STATE_RUNNING_P2P: vfio_device_mig_s
 pub const vfio_device_mig_state_VFIO_DEVICE_STATE_PRE_COPY: vfio_device_mig_state = 6;
 pub const vfio_device_mig_state_VFIO_DEVICE_STATE_PRE_COPY_P2P: vfio_device_mig_state = 7;
 pub type vfio_device_mig_state = ::std::os::raw::c_uint;
-#[doc = " VFIO_MIG_GET_PRECOPY_INFO - _IO(VFIO_TYPE, VFIO_BASE + 21)\n\n This ioctl is used on the migration data FD in the precopy phase of the\n migration data transfer. It returns an estimate of the current data sizes\n remaining to be transferred. It allows the user to judge when it is\n appropriate to leave PRE_COPY for STOP_COPY.\n\n This ioctl is valid only in PRE_COPY states and kernel driver should\n return -EINVAL from any other migration state.\n\n The vfio_precopy_info data structure returned by this ioctl provides\n estimates of data available from the device during the PRE_COPY states.\n This estimate is split into two categories, initial_bytes and\n dirty_bytes.\n\n The initial_bytes field indicates the amount of initial precopy\n data available from the device. This field should have a non-zero initial\n value and decrease as migration data is read from the device.\n It is recommended to leave PRE_COPY for STOP_COPY only after this field\n reaches zero. Leaving PRE_COPY earlier might make things slower.\n\n The dirty_bytes field tracks device state changes relative to data\n previously retrieved.  This field starts at zero and may increase as\n the internal device state is modified or decrease as that modified\n state is read from the device.\n\n Userspace may use the combination of these fields to estimate the\n potential data size available during the PRE_COPY phases, as well as\n trends relative to the rate the device is dirtying its internal\n state, but these fields are not required to have any bearing relative\n to the data size available during the STOP_COPY phase.\n\n Drivers have a lot of flexibility in when and what they transfer during the\n PRE_COPY phase, and how they report this from VFIO_MIG_GET_PRECOPY_INFO.\n\n During pre-copy the migration data FD has a temporary \"end of stream\" that is\n reached when both initial_bytes and dirty_byte are zero. For instance, this\n may indicate that the device is idle and not currently dirtying any internal\n state. When read() is done on this temporary end of stream the kernel driver\n should return ENOMSG from read(). Userspace can wait for more data (which may\n never come) by using poll.\n\n Once in STOP_COPY the migration data FD has a permanent end of stream\n signaled in the usual way by read() always returning 0 and poll always\n returning readable. ENOMSG may not be returned in STOP_COPY.\n Support for this ioctl is mandatory if a driver claims to support\n VFIO_MIGRATION_PRE_COPY.\n\n Return: 0 on success, -1 and errno set on failure."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_precopy_info {
@@ -1087,7 +1075,6 @@ const _: () = {
     ["Offset of field: vfio_device_feature_mig_data_size::stop_copy_length"]
         [::std::mem::offset_of!(vfio_device_feature_mig_data_size, stop_copy_length) - 0usize];
 };
-#[doc = " VFIO_IOMMU_GET_INFO - _IOR(VFIO_TYPE, VFIO_BASE + 12, struct vfio_iommu_info)\n\n Retrieve information about the IOMMU object. Fills in provided\n struct vfio_iommu_info. Caller sets argsz.\n\n XXX Should we do these by CHECK_EXTENSION too?"]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_iommu_type1_info {
@@ -1193,7 +1180,6 @@ const _: () = {
     ["Offset of field: vfio_iommu_type1_info_dma_avail::avail"]
         [::std::mem::offset_of!(vfio_iommu_type1_info_dma_avail, avail) - 8usize];
 };
-#[doc = " VFIO_IOMMU_MAP_DMA - _IOW(VFIO_TYPE, VFIO_BASE + 13, struct vfio_dma_map)\n\n Map process virtual addresses to IO virtual addresses using the\n provided struct vfio_dma_map. Caller sets argsz. READ &/ WRITE required.\n\n If flags & VFIO_DMA_MAP_FLAG_VADDR, update the base vaddr for iova. The vaddr\n must have previously been invalidated with VFIO_DMA_UNMAP_FLAG_VADDR.  To\n maintain memory consistency within the user application, the updated vaddr\n must address the same memory object as originally mapped.  Failure to do so\n will result in user memory corruption and/or device misbehavior.  iova and\n size must match those in the original MAP_DMA call.  Protection is not\n changed, and the READ & WRITE flags must be 0."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_iommu_type1_dma_map {
@@ -1244,7 +1230,6 @@ impl Default for vfio_bitmap {
         }
     }
 }
-#[doc = " VFIO_IOMMU_UNMAP_DMA - _IOWR(VFIO_TYPE, VFIO_BASE + 14,\n\t\t\t\t\t\t\tstruct vfio_dma_unmap)\n\n Unmap IO virtual addresses using the provided struct vfio_dma_unmap.\n Caller sets argsz.  The actual unmapped size is returned in the size\n field.  No guarantee is made to the user that arbitrary unmaps of iova\n or size different from those used in the original mapping call will\n succeed.\n\n VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP should be set to get the dirty bitmap\n before unmapping IO virtual addresses. When this flag is set, the user must\n provide a struct vfio_bitmap in data[]. User must provide zero-allocated\n memory via vfio_bitmap.data and its size in the vfio_bitmap.size field.\n A bit in the bitmap represents one page, of user provided page size in\n vfio_bitmap.pgsize field, consecutively starting from iova offset. Bit set\n indicates that the page at that offset from iova is dirty. A Bitmap of the\n pages in the range of unmapped size is returned in the user-provided\n vfio_bitmap.data.\n\n If flags & VFIO_DMA_UNMAP_FLAG_ALL, unmap all addresses.  iova and size\n must be 0.  This cannot be combined with the get-dirty-bitmap flag.\n\n If flags & VFIO_DMA_UNMAP_FLAG_VADDR, do not unmap, but invalidate host\n virtual addresses in the iova range.  DMA to already-mapped pages continues.\n Groups may not be added to the container while any addresses are invalid.\n This cannot be combined with the get-dirty-bitmap flag."]
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct vfio_iommu_type1_dma_unmap {
@@ -1271,7 +1256,6 @@ const _: () = {
     ["Offset of field: vfio_iommu_type1_dma_unmap::data"]
         [::std::mem::offset_of!(vfio_iommu_type1_dma_unmap, data) - 24usize];
 };
-#[doc = " VFIO_IOMMU_DIRTY_PAGES - _IOWR(VFIO_TYPE, VFIO_BASE + 17,\n                                     struct vfio_iommu_type1_dirty_bitmap)\n IOCTL is used for dirty pages logging.\n Caller should set flag depending on which operation to perform, details as\n below:\n\n Calling the IOCTL with VFIO_IOMMU_DIRTY_PAGES_FLAG_START flag set, instructs\n the IOMMU driver to log pages that are dirtied or potentially dirtied by\n the device; designed to be used when a migration is in progress. Dirty pages\n are logged until logging is disabled by user application by calling the IOCTL\n with VFIO_IOMMU_DIRTY_PAGES_FLAG_STOP flag.\n\n Calling the IOCTL with VFIO_IOMMU_DIRTY_PAGES_FLAG_STOP flag set, instructs\n the IOMMU driver to stop logging dirtied pages.\n\n Calling the IOCTL with VFIO_IOMMU_DIRTY_PAGES_FLAG_GET_BITMAP flag set\n returns the dirty pages bitmap for IOMMU container for a given IOVA range.\n The user must specify the IOVA range and the pgsize through the structure\n vfio_iommu_type1_dirty_bitmap_get in the data[] portion. This interface\n supports getting a bitmap of the smallest supported pgsize only and can be\n modified in future to get a bitmap of any specified supported pgsize. The\n user must provide a zeroed memory area for the bitmap memory and specify its\n size in bitmap.size. One bit is used to represent one page consecutively\n starting from iova offset. The user should provide page size in bitmap.pgsize\n field. A bit set in the bitmap indicates that the page at that offset from\n iova is dirty. The caller must set argsz to a value including the size of\n structure vfio_iommu_type1_dirty_bitmap_get, but excluding the size of the\n actual bitmap. If dirty pages logging is not enabled, an error will be\n returned.\n\n Only one of the flags _START, _STOP and _GET may be specified at a time.\n"]
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct vfio_iommu_type1_dirty_bitmap {
@@ -1454,7 +1438,6 @@ impl ::std::fmt::Debug for vfio_eeh_pe_op {
         )
     }
 }
-#[doc = " VFIO_IOMMU_SPAPR_REGISTER_MEMORY - _IOW(VFIO_TYPE, VFIO_BASE + 17, struct vfio_iommu_spapr_register_memory)\n\n Registers user space memory where DMA is allowed. It pins\n user pages and does the locked memory accounting so\n subsequent VFIO_IOMMU_MAP_DMA/VFIO_IOMMU_UNMAP_DMA calls\n get faster."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_iommu_spapr_register_memory {
@@ -1478,7 +1461,6 @@ const _: () = {
     ["Offset of field: vfio_iommu_spapr_register_memory::size"]
         [::std::mem::offset_of!(vfio_iommu_spapr_register_memory, size) - 16usize];
 };
-#[doc = " VFIO_IOMMU_SPAPR_TCE_CREATE - _IOWR(VFIO_TYPE, VFIO_BASE + 19, struct vfio_iommu_spapr_tce_create)\n\n Creates an additional TCE table and programs it (sets a new DMA window)\n to every IOMMU group in the container. It receives page shift, window\n size and number of levels in the TCE table being created.\n\n It allocates and returns an offset on a PCI bus of the new DMA window."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_iommu_spapr_tce_create {
@@ -1514,7 +1496,6 @@ const _: () = {
     ["Offset of field: vfio_iommu_spapr_tce_create::start_addr"]
         [::std::mem::offset_of!(vfio_iommu_spapr_tce_create, start_addr) - 32usize];
 };
-#[doc = " VFIO_IOMMU_SPAPR_TCE_REMOVE - _IOW(VFIO_TYPE, VFIO_BASE + 20, struct vfio_iommu_spapr_tce_remove)\n\n Unprograms a TCE table from all groups in the container and destroys it.\n It receives a PCI bus offset as a window id."]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_iommu_spapr_tce_remove {

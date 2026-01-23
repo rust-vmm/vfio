@@ -34,7 +34,7 @@ git checkout v5.2
 make headers_install INSTALL_HDR_PATH=vfio_headers
 cd vfio_headers
 bindgen include/linux/vfio.h -o vfio.rs \
-    --impl-debug --with-derive-default  \
+    --no-doc-comments --impl-debug --with-derive-default  \
     --with-derive-partialeq  --impl-partialeq \
     -- -Iinclude
 

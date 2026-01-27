@@ -5,6 +5,9 @@
 - [[128]](https://github.com/rust-vmm/vfio/pull/128) Support vm-memory 0.17
 
 ## Added
+- [[106]](https://github.com/rust-vmm/vfio/pull/106) Added new public APIs
+	to support multiple VFIO interfaces: both legacy mode (using
+	containers and groups) and cdev mode (using iommufd)
 
 - [[127]](https://github.com/rust-vmm/vfio/pull/127) vfio-ioctls: Add support for vfio cdev and iommufd
 

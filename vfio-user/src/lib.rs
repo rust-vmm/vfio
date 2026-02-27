@@ -286,8 +286,8 @@ pub enum Error {
     ReceiveWithFd(#[source] vmm_sys_util::errno::Error),
     #[error("Not a PCI device")]
     NotPciDevice,
-    #[error("Error removing stale socket: {0}")]
-    RemoveSocketFile(#[source] std::io::Error),
+    #[error("Socket path already exists")]
+    SocketPathExists,
     #[error("Error binding to socket: {0}")]
     SocketBind(#[source] std::io::Error),
     #[error("Error accepting connection: {0}")]
@@ -852,12 +852,22 @@ pub trait ServerBackend {
     ) -> Result<(), std::io::Error>;
 }
 
+pub struct SparseArea {
+    pub area: vfio_region_sparse_mmap_area,
+    pub mmap_fd: Option<RawFd>,
+}
+
+pub struct ServerRegion {
+    pub region_info: vfio_region_info,
+    pub sparse_areas: Vec<SparseArea>,
+}
+
 pub struct Server {
     listener: UnixListener,
     path: PathBuf,
     resettable: bool,
     irqs: Vec<IrqInfo>,
-    regions: Vec<vfio_region_info>,
+    regions: Vec<ServerRegion>,
 }
 
 impl Server {
@@ -865,10 +875,10 @@ impl Server {
         path: &Path,
         resettable: bool,
         irqs: Vec<IrqInfo>,
-        regions: Vec<vfio_region_info>,
+        regions: Vec<ServerRegion>,
     ) -> Result<Server, Error> {
         if path.exists() {
-            std::fs::remove_file(path).map_err(Error::RemoveSocketFile)?;
+            return Err(Error::SocketPathExists);
         }
 
         let listener = UnixListener::bind(path).map_err(Error::SocketBind)?;
@@ -1072,20 +1082,89 @@ impl Server {
                     return Err(Error::InvalidInput);
                 }
 
-                // TODO: Need to handle region capabilities e.g. sparse regions
+                let server_region = &self.regions[cmd.region_info.index as usize];
+                let mut region_info = server_region.region_info;
+                let sparse_areas = &server_region.sparse_areas;
+
+                let mut cap_data: Vec<u8> = Vec::new();
+                let mut mmap_fds: Vec<RawFd> = Vec::new();
+                if !sparse_areas.is_empty() {
+                    let cap_header = vfio_info_cap_header {
+                        id: VFIO_REGION_INFO_CAP_SPARSE_MMAP as u16,
+                        version: 1,
+                        next: 0,
+                    };
+                    // SAFETY: vfio_info_cap_header is repr(C) and cap_header
+                    // is correctly initialized.
+                    cap_data.extend_from_slice(unsafe {
+                        std::slice::from_raw_parts(
+                            &cap_header as *const vfio_info_cap_header as *const u8,
+                            size_of::<vfio_info_cap_header>(),
+                        )
+                    });
+                    cap_data.extend_from_slice(&(sparse_areas.len() as u32).to_le_bytes());
+                    cap_data.extend_from_slice(&0u32.to_le_bytes());
+                    for sparse_area in sparse_areas {
+                        // SAFETY: vfio_region_sparse_mmap_area is repr(C) and
+                        // sparse_area.area is correctly initialized.
+                        cap_data.extend_from_slice(unsafe {
+                            std::slice::from_raw_parts(
+                                &sparse_area.area as *const vfio_region_sparse_mmap_area
+                                    as *const u8,
+                                size_of::<vfio_region_sparse_mmap_area>(),
+                            )
+                        });
+                        if let Some(fd) = sparse_area.mmap_fd {
+                            mmap_fds.push(fd);
+                        }
+                    }
+                }
+
+                let send_cap_data = if !cap_data.is_empty() {
+                    let full_argsz = (size_of::<vfio_region_info>() + cap_data.len()) as u32;
+                    region_info.flags |= VFIO_REGION_INFO_FLAG_CAPS;
+                    region_info.argsz = full_argsz;
+                    region_info.cap_offset = size_of::<vfio_region_info>() as u32;
+                    cmd.region_info.argsz >= full_argsz
+                } else {
+                    false
+                };
+
+                let message_size = if send_cap_data {
+                    (size_of::<DeviceGetRegionInfo>() + cap_data.len()) as u32
+                } else {
+                    size_of::<DeviceGetRegionInfo>() as u32
+                };
+
                 let reply = DeviceGetRegionInfo {
                     header: Header {
                         message_id: cmd.header.message_id,
                         command: Command::DeviceGetRegionInfo,
                         flags: HeaderFlags::Reply as u32,
-                        message_size: size_of::<DeviceGetRegionInfo>() as u32,
+                        message_size,
                         ..Default::default()
                     },
-                    region_info: self.regions[cmd.region_info.index as usize],
+                    region_info,
                 };
-                stream
-                    .write_all(reply.as_slice())
-                    .map_err(Error::StreamWrite)?;
+
+                if send_cap_data {
+                    let reply_bytes = reply.as_slice();
+                    let mut buf = Vec::with_capacity(reply_bytes.len() + cap_data.len());
+                    buf.extend_from_slice(reply_bytes);
+                    buf.extend_from_slice(&cap_data);
+
+                    if !mmap_fds.is_empty() {
+                        stream
+                            .send_with_fds(&[&buf[..]], &mmap_fds)
+                            .map_err(Error::SendWithFd)?;
+                    } else {
+                        stream.write_all(&buf).map_err(Error::StreamWrite)?;
+                    }
+                } else {
+                    stream
+                        .write_all(reply.as_slice())
+                        .map_err(Error::StreamWrite)?;
+                }
             }
             Command::GetIrqInfo => {
                 let mut cmd = GetIrqInfo {
@@ -1305,5 +1384,97 @@ impl Drop for Server {
         if self.path.exists() {
             let _ = std::fs::remove_file(&self.path);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::size_of;
+
+    fn build_sparse_cap_data(areas: &[vfio_region_sparse_mmap_area]) -> Vec<u8> {
+        let mut cap_data: Vec<u8> = Vec::new();
+        let cap_header = vfio_info_cap_header {
+            id: VFIO_REGION_INFO_CAP_SPARSE_MMAP as u16,
+            version: 1,
+            next: 0,
+        };
+        // SAFETY: `cap_header` is a valid, initialized repr(C) struct.
+        cap_data.extend_from_slice(unsafe {
+            std::slice::from_raw_parts(
+                &cap_header as *const vfio_info_cap_header as *const u8,
+                size_of::<vfio_info_cap_header>(),
+            )
+        });
+        cap_data.extend_from_slice(&(areas.len() as u32).to_le_bytes());
+        cap_data.extend_from_slice(&0u32.to_le_bytes());
+        for area in areas {
+            // SAFETY: `area` is a valid, initialized repr(C) struct.
+            cap_data.extend_from_slice(unsafe {
+                std::slice::from_raw_parts(
+                    area as *const vfio_region_sparse_mmap_area as *const u8,
+                    size_of::<vfio_region_sparse_mmap_area>(),
+                )
+            });
+        }
+        cap_data
+    }
+
+    #[test]
+    fn test_parse_sparse_mmap_caps() {
+        let areas = vec![
+            vfio_region_sparse_mmap_area {
+                offset: 0x0,
+                size: 0x1000,
+            },
+            vfio_region_sparse_mmap_area {
+                offset: 0x2000,
+                size: 0x3000,
+            },
+        ];
+
+        let cap_data = build_sparse_cap_data(&areas);
+
+        let region_info = vfio_region_info {
+            argsz: (size_of::<vfio_region_info>() + cap_data.len()) as u32,
+            flags: VFIO_REGION_INFO_FLAG_CAPS,
+            cap_offset: size_of::<vfio_region_info>() as u32,
+            ..Default::default()
+        };
+
+        let parsed = Client::parse_region_caps(&cap_data, &region_info).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].offset, 0x0);
+        assert_eq!(parsed[0].size, 0x1000);
+        assert_eq!(parsed[1].offset, 0x2000);
+        assert_eq!(parsed[1].size, 0x3000);
+    }
+
+    #[test]
+    fn test_parse_empty_sparse_mmap_caps() {
+        let cap_data = build_sparse_cap_data(&[]);
+
+        let region_info = vfio_region_info {
+            argsz: (size_of::<vfio_region_info>() + cap_data.len()) as u32,
+            flags: VFIO_REGION_INFO_FLAG_CAPS,
+            cap_offset: size_of::<vfio_region_info>() as u32,
+            ..Default::default()
+        };
+
+        let parsed = Client::parse_region_caps(&cap_data, &region_info).unwrap();
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn test_no_caps_returns_empty() {
+        let region_info = vfio_region_info {
+            argsz: size_of::<vfio_region_info>() as u32,
+            flags: 0,
+            cap_offset: 0,
+            ..Default::default()
+        };
+
+        let parsed = Client::parse_region_caps(&[], &region_info).unwrap();
+        assert!(parsed.is_empty());
     }
 }

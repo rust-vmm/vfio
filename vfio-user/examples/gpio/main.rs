@@ -13,7 +13,7 @@ use vfio_bindings::bindings::vfio::{
     VFIO_PCI_INTX_IRQ_INDEX, VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS, VFIO_REGION_INFO_FLAG_READ,
     VFIO_REGION_INFO_FLAG_WRITE,
 };
-use vfio_user::{IrqInfo, Server, ServerBackend};
+use vfio_user::{IrqInfo, Server, ServerBackend, ServerRegion};
 
 mod pci;
 
@@ -189,7 +189,7 @@ impl ServerBackend for TestBackend {
     }
 }
 
-fn create_regions() -> Vec<vfio_region_info> {
+fn create_regions() -> Vec<ServerRegion> {
     let mut regions = Vec::with_capacity(VFIO_PCI_NUM_REGIONS as usize);
     for index in 0..VFIO_PCI_NUM_REGIONS {
         let mut region = vfio_region_info {
@@ -203,7 +203,10 @@ fn create_regions() -> Vec<vfio_region_info> {
             region.flags = VFIO_REGION_INFO_FLAG_READ | VFIO_REGION_INFO_FLAG_WRITE;
         }
 
-        regions.push(region);
+        regions.push(ServerRegion {
+            region_info: region,
+            sparse_areas: Vec::new(),
+        });
     }
 
     regions

@@ -15,7 +15,7 @@ use std::os::unix::{
     io::{FromRawFd, RawFd},
     net::{UnixListener, UnixStream},
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 use vfio_bindings::bindings::vfio::*;
 use vm_memory::{ByteValued, FileOffset};
@@ -286,6 +286,8 @@ pub enum Error {
     ReceiveWithFd(#[source] vmm_sys_util::errno::Error),
     #[error("Not a PCI device")]
     NotPciDevice,
+    #[error("Error removing stale socket: {0}")]
+    RemoveSocketFile(#[source] std::io::Error),
     #[error("Error binding to socket: {0}")]
     SocketBind(#[source] std::io::Error),
     #[error("Error accepting connection: {0}")]
@@ -852,6 +854,7 @@ pub trait ServerBackend {
 
 pub struct Server {
     listener: UnixListener,
+    path: PathBuf,
     resettable: bool,
     irqs: Vec<IrqInfo>,
     regions: Vec<vfio_region_info>,
@@ -864,10 +867,15 @@ impl Server {
         irqs: Vec<IrqInfo>,
         regions: Vec<vfio_region_info>,
     ) -> Result<Server, Error> {
+        if path.exists() {
+            std::fs::remove_file(path).map_err(Error::RemoveSocketFile)?;
+        }
+
         let listener = UnixListener::bind(path).map_err(Error::SocketBind)?;
 
         Ok(Server {
             listener,
+            path: path.to_path_buf(),
             resettable,
             irqs,
             regions,
@@ -1289,5 +1297,13 @@ impl Server {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        if self.path.exists() {
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
 }

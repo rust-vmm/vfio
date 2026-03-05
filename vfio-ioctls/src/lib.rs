@@ -167,6 +167,21 @@ pub enum VfioError {
     #[cfg(feature = "vfio_cdev")]
     #[error("failed iommufd ioctl")]
     IommufdIoctlError(#[source] IommufdError),
+    #[cfg(feature = "vfio_cdev")]
+    #[error("missing virt_sid for S1 HWPT setup")]
+    MissingVirtSid,
+    #[cfg(feature = "vfio_cdev")]
+    #[error("failed to create iommufd vIOMMU")]
+    NewIommufdVIommu(#[source] IommufdError),
+    #[cfg(feature = "vfio_cdev")]
+    #[error("failed to create iommufd vDevice")]
+    NewIommufdVDevice(#[source] IommufdError),
+    #[cfg(feature = "vfio_cdev")]
+    #[error("failed to destroy s1 hwpt")]
+    IommufdS1HwptDestroy(#[source] IommufdError),
+    #[cfg(feature = "vfio_cdev")]
+    #[error("failed to allocate s1 hwpt")]
+    IommufdS1HwptAlloc(#[source] IommufdError),
 }
 
 /// Specialized version of `Result` for VFIO subsystem.

@@ -854,12 +854,12 @@ pub trait ServerBackend {
 
 pub struct SparseArea {
     pub area: vfio_region_sparse_mmap_area,
-    pub mmap_fd: Option<RawFd>,
 }
 
 pub struct ServerRegion {
     pub region_info: vfio_region_info,
     pub sparse_areas: Vec<SparseArea>,
+    pub mmap_fd: Option<RawFd>,
 }
 
 pub struct Server {
@@ -1087,7 +1087,6 @@ impl Server {
                 let sparse_areas = &server_region.sparse_areas;
 
                 let mut cap_data: Vec<u8> = Vec::new();
-                let mut mmap_fds: Vec<RawFd> = Vec::new();
                 if !sparse_areas.is_empty() {
                     let cap_header = vfio_info_cap_header {
                         id: VFIO_REGION_INFO_CAP_SPARSE_MMAP as u16,
@@ -1114,9 +1113,6 @@ impl Server {
                                 size_of::<vfio_region_sparse_mmap_area>(),
                             )
                         });
-                        if let Some(fd) = sparse_area.mmap_fd {
-                            mmap_fds.push(fd);
-                        }
                     }
                 }
 
@@ -1153,9 +1149,9 @@ impl Server {
                     buf.extend_from_slice(reply_bytes);
                     buf.extend_from_slice(&cap_data);
 
-                    if !mmap_fds.is_empty() {
+                    if let Some(fd) = server_region.mmap_fd {
                         stream
-                            .send_with_fds(&[&buf[..]], &mmap_fds)
+                            .send_with_fds(&[&buf[..]], &[fd])
                             .map_err(Error::SendWithFd)?;
                     } else {
                         stream.write_all(&buf).map_err(Error::StreamWrite)?;

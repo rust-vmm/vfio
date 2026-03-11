@@ -206,6 +206,7 @@ fn create_regions() -> Vec<ServerRegion> {
         regions.push(ServerRegion {
             region_info: region,
             sparse_areas: Vec::new(),
+            mmap_fd: None,
         });
     }
 

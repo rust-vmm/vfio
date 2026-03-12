@@ -259,7 +259,7 @@ pub struct Region {
     pub sparse_areas: Vec<vfio_region_sparse_mmap_area>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct IrqInfo {
     pub index: u32,
     pub flags: u32,
@@ -852,10 +852,12 @@ pub trait ServerBackend {
     ) -> Result<(), std::io::Error>;
 }
 
+#[derive(Clone, Copy)]
 pub struct SparseArea {
     pub area: vfio_region_sparse_mmap_area,
 }
 
+#[derive(Clone)]
 pub struct ServerRegion {
     pub region_info: vfio_region_info,
     pub sparse_areas: Vec<SparseArea>,

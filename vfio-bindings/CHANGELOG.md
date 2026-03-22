@@ -6,6 +6,12 @@
 
 ## Added
 
+# [v0.6.2]
+
+## Changed
+
+- [[130]](https://github.com/rust-vmm/vfio/pull/130) Don't generate doc comments for bindings
+
 # [v0.6.1]
 
 ## Changed

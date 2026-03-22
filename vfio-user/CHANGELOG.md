@@ -2,11 +2,23 @@
 
 ## Changed
 
+## Added
+
+## Fixed
+
+# [v0.1.3]
+
+## Changed
+
 - [[128]](https://github.com/rust-vmm/vfio/pull/128) Support vm-memory 0.17
 
 ## Added
 
+- [[132]](https://github.com/rust-vmm/vfio/pull/132) Implement sparse mmap capability for Server
+
 ## Fixed
+
+- [[134]](https://github.com/rust-vmm/vfio/pull/134) Fix incorrect spec implementation for sparse mmap areas
 
 # [v0.1.2]
 

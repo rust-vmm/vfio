@@ -2,6 +2,14 @@
 
 ## Changed
 
+## Added
+
+## Fixed
+
+# [v0.5.3]
+
+## Changed
+
 - [[128]](https://github.com/rust-vmm/vfio/pull/128) Support vm-memory 0.17
 
 - [[103]](https://github.com/rust-vmm/vfio/pull/103)  Functions that map

@@ -36,5 +36,5 @@ mshv-bindings = { version = "0.6.5", features = [
   "fam-wrappers",
 ], optional = true }
 mshv-ioctls = { version = "0.6.5", optional = true }
-iommufd-bindings = { git = "https://github.com/cloud-hypervisor/iommufd", rev = "083c016", optional = true }
-iommufd-ioctls = { git = "https://github.com/cloud-hypervisor/iommufd", rev = "083c016", optional = true }
+iommufd-bindings = { git = "https://github.com/likebreath/iommufd", branch = "0129/rfc_viommu_vdevice", optional = true }
+iommufd-ioctls = { git = "https://github.com/likebreath/iommufd", branch = "0129/rfc_viommu_vdevice", optional = true }

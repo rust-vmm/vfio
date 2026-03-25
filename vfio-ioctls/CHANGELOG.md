@@ -10,6 +10,8 @@
 
 ## Changed
 
+- [[137]](https://github.com/rust-vmm/vfio/pull/137) Switch iommufd dependencies from git to crates.io
+
 - [[128]](https://github.com/rust-vmm/vfio/pull/128) Support vm-memory 0.17
 
 - [[103]](https://github.com/rust-vmm/vfio/pull/103)  Functions that map

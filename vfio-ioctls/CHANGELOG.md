@@ -6,7 +6,7 @@
 
 ## Fixed
 
-# [v0.5.3]
+# [v0.6.0]
 
 ## Changed
 
@@ -35,6 +35,10 @@
 - [[127]](https://github.com/rust-vmm/vfio/pull/127) vfio-ioctls: Add support for vfio cdev and iommufd
 
 ## Fixed
+
+# [v0.5.3]
+
+Yanked due to semver breakage.
 
 # [v0.5.2]
 

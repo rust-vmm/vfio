@@ -1,6 +1,6 @@
 [package]
 name = "vfio-ioctls"
-version = "0.5.3"
+version = "0.6.0"
 authors = [
   "The Cloud Hypervisor Authors",
   "Liu Jiang <gerry@linux.alibaba.com>",

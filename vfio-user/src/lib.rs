@@ -1359,7 +1359,7 @@ impl Server {
                 let reply = Header {
                     message_id: header.message_id,
                     command: header.command,
-                    flags: HeaderFlags::Error as u32,
+                    flags: HeaderFlags::Error as u32 | HeaderFlags::Reply as u32,
                     message_size: size_of::<Header>() as u32,
                     error: if matches!(e, Error::InvalidInput) {
                         EINVAL as u32

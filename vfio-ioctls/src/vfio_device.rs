@@ -1292,6 +1292,41 @@ impl VfioDevice {
         })
     }
 
+    /// Create a new vfio device from an already-opened vfio cdev file.
+    ///
+    /// This lets a caller pass in a pre-opened `/dev/vfio/devices/vfioN` FD
+    /// instead of discovering it through the sysfs path of a PCI device. It
+    /// is only valid when `vfio_ops` is a [`VfioIommufd`]: the legacy
+    /// container/group mode does not expose a per-device cdev, so there is
+    /// no equivalent FD to pass.
+    ///
+    /// # Parameters
+    /// * `device`: an opened vfio cdev file whose ownership is transferred
+    ///   into the returned `VfioDevice`.
+    /// * `vfio_ops`: must be a [`VfioIommufd`].
+    #[cfg(feature = "vfio_cdev")]
+    pub fn new_from_fd(device: File, vfio_ops: Arc<dyn VfioOps>) -> Result<Self> {
+        let vfio_iommufd = vfio_ops
+            .as_any()
+            .downcast_ref::<VfioIommufd>()
+            .ok_or(VfioError::DowncastVfioOps)?;
+        Self::bind_device_to_iommufd(&device, vfio_iommufd)?;
+
+        let dev_info = VfioDeviceInfo::get_device_info(&device)?;
+        let device_info = VfioDeviceInfo::new(device, &dev_info);
+        let regions = device_info.get_regions()?;
+        let irqs = device_info.get_irqs()?;
+
+        Ok(VfioDevice {
+            device: ManuallyDrop::new(device_info.device),
+            flags: device_info.flags,
+            regions,
+            irqs,
+            sysfspath: None,
+            vfio_ops,
+        })
+    }
+
     /// VFIO device reset only if the device supports being reset.
     pub fn reset(&self) {
         if self.flags & VFIO_DEVICE_FLAGS_RESET != 0 {
@@ -2004,5 +2039,18 @@ mod tests {
 
         let flags: u32 = VFIO_DEVICE_FLAGS_AP;
         assert_eq!(flags, VfioDeviceInfo::get_device_type(&flags));
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    #[test]
+    fn test_vfio_device_new_from_fd_rejects_container() {
+        let tmp_file = TempFile::new().unwrap();
+        let device = File::open(tmp_file.as_path()).unwrap();
+        let container: Arc<dyn VfioOps> = Arc::new(create_vfio_container());
+
+        assert!(matches!(
+            VfioDevice::new_from_fd(device, container),
+            Err(VfioError::DowncastVfioOps)
+        ));
     }
 }

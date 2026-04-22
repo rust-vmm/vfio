@@ -1181,7 +1181,7 @@ pub struct VfioDevice {
     pub(crate) flags: u32,
     pub(crate) regions: Vec<VfioRegion>,
     pub(crate) irqs: HashMap<u32, VfioIrq>,
-    pub(crate) sysfspath: PathBuf,
+    pub(crate) sysfspath: Option<PathBuf>,
     pub(crate) vfio_ops: Arc<dyn VfioOps>,
 }
 
@@ -1281,7 +1281,7 @@ impl VfioDevice {
             flags: device_info.flags,
             regions,
             irqs,
-            sysfspath: sysfspath.to_path_buf(),
+            sysfspath: Some(sysfspath.to_path_buf()),
             vfio_ops,
         })
     }
@@ -1642,7 +1642,13 @@ impl Drop for VfioDevice {
                 ManuallyDrop::drop(&mut self.device);
             }
 
-            let group_id = Self::get_group_id_from_path(&self.sysfspath).unwrap();
+            // VfioContainer always sets sysfspath, as it requires a sysfs path to get
+            // the group id and open the group file, so it is safe to unwrap here.
+            let sysfspath = self
+                .sysfspath
+                .as_deref()
+                .expect("VfioContainer requires a sysfs path");
+            let group_id = Self::get_group_id_from_path(sysfspath).unwrap();
             let group = container.get_group(group_id).unwrap();
             container.put_group(group);
         }

@@ -1222,6 +1222,33 @@ impl VfioDevice {
         }
     }
 
+    #[cfg(feature = "vfio_cdev")]
+    fn bind_device_to_iommufd(device: &File, vfio_iommufd: &VfioIommufd) -> Result<()> {
+        // Add the vfio cdev file to VFIO-KVM device tracking
+        vfio_iommufd
+            .common
+            .device_set_fd(device.as_raw_fd(), true)?;
+
+        // Bind the VFIO device to the iommufd file
+        let mut bind = vfio_device_bind_iommufd {
+            argsz: mem::size_of::<vfio_device_bind_iommufd>() as u32,
+            flags: 0,
+            iommufd: vfio_iommufd.iommufd.as_raw_fd(),
+            out_devid: 0,
+        };
+        vfio_syscall::bind_device_iommufd(device, &mut bind)?;
+
+        // Associate the vfio device to the IOAS within the bound iommufd
+        let mut attach_data = vfio_device_attach_iommufd_pt {
+            argsz: mem::size_of::<vfio_device_attach_iommufd_pt>() as u32,
+            flags: 0,
+            pt_id: vfio_iommufd.ioas_id,
+        };
+        vfio_syscall::attach_device_iommufd_pt(device, &mut attach_data)?;
+
+        Ok(())
+    }
+
     fn get_device_info(sysfspath: &Path, vfio_ops: Arc<dyn VfioOps>) -> Result<VfioDeviceInfo> {
         if let Some(vfio_container) = vfio_ops.as_any().downcast_ref::<VfioContainer>() {
             let group_id = Self::get_group_id_from_path(sysfspath)?;
@@ -1234,29 +1261,8 @@ impl VfioDevice {
         if let Some(vfio_iommufd) = vfio_ops.as_any().downcast_ref::<VfioIommufd>() {
             // Open the vfio cdev file
             let device = Self::get_device_cdev_from_path(sysfspath)?;
-
-            // Add the vfio cdev file to VFIO-KVM device tracking
-            vfio_iommufd
-                .common
-                .device_set_fd(device.as_raw_fd(), true)?;
-
-            // Bind the VFIO device to the iommufd file
-            let mut bind = vfio_device_bind_iommufd {
-                argsz: mem::size_of::<vfio_device_bind_iommufd>() as u32,
-                flags: 0,
-                iommufd: vfio_iommufd.iommufd.as_raw_fd(),
-                out_devid: 0,
-            };
-            vfio_syscall::bind_device_iommufd(&device, &mut bind)?;
-
-            // Associate the vfio device to the IOAS within the bound iommufd
-            let mut attach_data = vfio_device_attach_iommufd_pt {
-                argsz: mem::size_of::<vfio_device_attach_iommufd_pt>() as u32,
-                flags: 0,
-                pt_id: vfio_iommufd.ioas_id,
-            };
-            vfio_syscall::attach_device_iommufd_pt(&device, &mut attach_data)?;
-
+            // Bind the vfio cdev file to the iommufd
+            Self::bind_device_to_iommufd(&device, vfio_iommufd)?;
             let dev_info = VfioDeviceInfo::get_device_info(&device)?;
             let dev_info = VfioDeviceInfo::new(device, &dev_info);
 

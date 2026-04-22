@@ -12,6 +12,7 @@ name = "gpio"
 
 [dependencies]
 bitflags = "2.9.4"
+enumn = "0.1.14"
 libc = "0.2.139"
 log = "0.4.17"
 serde = { version = "1.0.151", features = ["rc"] }

@@ -70,6 +70,12 @@ struct Header {
     error: u32,
 }
 
+impl Header {
+    fn no_reply(&self) -> bool {
+        self.flags & HeaderFlags::NoReply as u32 != 0
+    }
+}
+
 #[repr(C)]
 #[derive(Default, Clone, Copy, Debug)]
 struct Version {
@@ -302,6 +308,8 @@ pub enum Error {
     Backend(#[source] std::io::Error),
     #[error("Invalid input")]
     InvalidInput,
+    #[error("No_reply bit unexpectedly set for command: {0:?}")]
+    UnexpectedNoReply(Command),
 }
 
 impl Client {
@@ -913,6 +921,10 @@ impl Server {
                 return Err(Error::UnsupportedCommand(command));
             }
             Command::Version => {
+                if header.no_reply() {
+                    return Err(Error::UnexpectedNoReply(Command::Version));
+                }
+
                 // TODO: Make version/capabilities configurable
                 let mut client_version = Version {
                     header,
@@ -997,6 +1009,10 @@ impl Server {
                     )
                     .map_err(Error::Backend)?;
 
+                if header.no_reply() {
+                    return Ok(());
+                }
+
                 let reply = Header {
                     message_id: cmd.header.message_id,
                     command: Command::DmaMap as u16,
@@ -1025,6 +1041,10 @@ impl Server {
                     )
                     .map_err(Error::Backend)?;
 
+                if header.no_reply() {
+                    return Ok(());
+                }
+
                 let reply = DmaUnmap {
                     header: Header {
                         message_id: cmd.header.message_id,
@@ -1043,6 +1063,10 @@ impl Server {
                     .map_err(Error::StreamWrite)?;
             }
             Command::DeviceGetInfo => {
+                if header.no_reply() {
+                    return Err(Error::UnexpectedNoReply(Command::DeviceGetInfo));
+                }
+
                 let mut cmd = DeviceGetInfo {
                     header,
                     ..Default::default()
@@ -1075,6 +1099,10 @@ impl Server {
                     .map_err(Error::StreamWrite)?;
             }
             Command::DeviceGetRegionInfo => {
+                if header.no_reply() {
+                    return Err(Error::UnexpectedNoReply(Command::DeviceGetRegionInfo));
+                }
+
                 let mut cmd = DeviceGetRegionInfo {
                     header,
                     ..Default::default()
@@ -1168,6 +1196,10 @@ impl Server {
                 }
             }
             Command::GetIrqInfo => {
+                if header.no_reply() {
+                    return Err(Error::UnexpectedNoReply(Command::GetIrqInfo));
+                }
+
                 let mut cmd = GetIrqInfo {
                     header,
                     ..Default::default()
@@ -1220,6 +1252,10 @@ impl Server {
                     .set_irqs(cmd.index, cmd.flags, cmd.start, cmd.count, fds)
                     .map_err(Error::Backend)?;
 
+                if header.no_reply() {
+                    return Ok(());
+                }
+
                 let reply = Header {
                     message_id: cmd.header.message_id,
                     command: Command::SetIrqs as u16,
@@ -1232,6 +1268,10 @@ impl Server {
                     .map_err(Error::StreamWrite)?;
             }
             Command::RegionRead => {
+                if header.no_reply() {
+                    return Err(Error::UnexpectedNoReply(Command::RegionRead));
+                }
+
                 let mut cmd = RegionAccess {
                     header,
                     ..Default::default()
@@ -1289,6 +1329,10 @@ impl Server {
                     .region_write(region, offset, &data)
                     .map_err(Error::Backend)?;
 
+                if header.no_reply() {
+                    return Ok(());
+                }
+
                 let reply = RegionAccess {
                     header: Header {
                         message_id: cmd.header.message_id,
@@ -1307,6 +1351,11 @@ impl Server {
             }
             Command::DeviceReset => {
                 backend.reset().map_err(Error::Backend)?;
+
+                if header.no_reply() {
+                    return Ok(());
+                }
+
                 let reply = Header {
                     message_id: header.message_id,
                     command: Command::DeviceReset as u16,

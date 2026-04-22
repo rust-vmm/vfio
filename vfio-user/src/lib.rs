@@ -29,7 +29,7 @@ extern crate log;
 
 #[allow(dead_code)]
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, enumn::N)]
 pub enum Command {
     #[default]
     Unknown = 0,
@@ -64,7 +64,7 @@ enum HeaderFlags {
 #[derive(Default, Clone, Copy, Debug)]
 struct Header {
     message_id: u16,
-    command: Command,
+    command: u16,
     message_size: u32,
     flags: u32,
     error: u32,
@@ -292,6 +292,8 @@ pub enum Error {
     SocketBind(#[source] std::io::Error),
     #[error("Error accepting connection: {0}")]
     SocketAccept(#[source] std::io::Error),
+    #[error("Unknown command: {0}")]
+    UnknownCommand(u16),
     #[error("Unsupported command: {0:?}")]
     UnsupportedCommand(Command),
     #[error("Unsupported feature")]
@@ -329,7 +331,7 @@ impl Client {
         let version = Version {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::Version,
+                command: Command::Version as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: (size_of::<Version>() + version_data.len() + 1) as u32,
                 ..Default::default()
@@ -393,7 +395,7 @@ impl Client {
         let dma_map = DmaMap {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::DmaMap,
+                command: Command::DmaMap as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: size_of::<DmaMap>() as u32,
                 ..Default::default()
@@ -423,7 +425,7 @@ impl Client {
         let dma_unmap = DmaUnmap {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::DmaUnmap,
+                command: Command::DmaUnmap as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: size_of::<DmaUnmap>() as u32,
                 ..Default::default()
@@ -452,7 +454,7 @@ impl Client {
         let reset = DeviceReset {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::DeviceReset,
+                command: Command::DeviceReset as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: size_of::<DeviceReset>() as u32,
                 ..Default::default()
@@ -477,7 +479,7 @@ impl Client {
         let get_info = DeviceGetInfo {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::DeviceGetInfo,
+                command: Command::DeviceGetInfo as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: size_of::<DeviceGetInfo>() as u32,
                 ..Default::default()
@@ -536,7 +538,7 @@ impl Client {
         let mut get_region_info = DeviceGetRegionInfo {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::DeviceGetRegionInfo,
+                command: Command::DeviceGetRegionInfo as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: std::mem::size_of::<DeviceGetRegionInfo>() as u32,
                 ..Default::default()
@@ -669,7 +671,7 @@ impl Client {
         let region_read = RegionAccess {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::RegionRead,
+                command: Command::RegionRead as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: size_of::<RegionAccess>() as u32,
                 ..Default::default()
@@ -697,7 +699,7 @@ impl Client {
         let region_write = RegionAccess {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::RegionWrite,
+                command: Command::RegionWrite as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: (size_of::<RegionAccess>() + data.len()) as u32,
                 ..Default::default()
@@ -729,7 +731,7 @@ impl Client {
         let get_irq_info = GetIrqInfo {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::GetIrqInfo,
+                command: Command::GetIrqInfo as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: size_of::<GetIrqInfo>() as u32,
                 ..Default::default()
@@ -770,7 +772,7 @@ impl Client {
         let set_irqs = SetIrqs {
             header: Header {
                 message_id: self.next_message_id.0,
-                command: Command::SetIrqs,
+                command: Command::SetIrqs as u16,
                 flags: HeaderFlags::Command as u32,
                 message_size: size_of::<SetIrqs>() as u32,
                 ..Default::default()
@@ -901,13 +903,14 @@ impl Server {
         header: Header,
         fds: Vec<File>,
     ) -> Result<(), Error> {
-        match header.command {
+        let command = Command::n(header.command).ok_or(Error::UnknownCommand(header.command))?;
+        match command {
             Command::Unknown
             | Command::GetRegionIoFds
             | Command::DmaRead
             | Command::DmaWrite
             | Command::UserDirtyPages => {
-                return Err(Error::UnsupportedCommand(header.command));
+                return Err(Error::UnsupportedCommand(command));
             }
             Command::Version => {
                 // TODO: Make version/capabilities configurable
@@ -943,7 +946,7 @@ impl Server {
                 let server_version = Version {
                     header: Header {
                         message_id: client_version.header.message_id,
-                        command: Command::Version,
+                        command: Command::Version as u16,
                         flags: HeaderFlags::Reply as u32,
                         message_size: (size_of::<Version>() + server_version_data.len() + 1) as u32,
                         ..Default::default()
@@ -996,7 +999,7 @@ impl Server {
 
                 let reply = Header {
                     message_id: cmd.header.message_id,
-                    command: Command::DmaMap,
+                    command: Command::DmaMap as u16,
                     flags: HeaderFlags::Reply as u32,
                     message_size: size_of::<Header>() as u32,
                     ..Default::default()
@@ -1025,7 +1028,7 @@ impl Server {
                 let reply = DmaUnmap {
                     header: Header {
                         message_id: cmd.header.message_id,
-                        command: Command::DmaUnmap,
+                        command: Command::DmaUnmap as u16,
                         flags: HeaderFlags::Reply as u32,
                         message_size: size_of::<DmaUnmap>() as u32,
                         ..Default::default()
@@ -1051,7 +1054,7 @@ impl Server {
                 let reply = DeviceGetInfo {
                     header: Header {
                         message_id: cmd.header.message_id,
-                        command: Command::DeviceGetInfo,
+                        command: Command::DeviceGetInfo as u16,
                         flags: HeaderFlags::Reply as u32,
                         message_size: size_of::<DeviceGetInfo>() as u32,
                         ..Default::default()
@@ -1137,7 +1140,7 @@ impl Server {
                 let reply = DeviceGetRegionInfo {
                     header: Header {
                         message_id: cmd.header.message_id,
-                        command: Command::DeviceGetRegionInfo,
+                        command: Command::DeviceGetRegionInfo as u16,
                         flags: HeaderFlags::Reply as u32,
                         message_size,
                         ..Default::default()
@@ -1182,7 +1185,7 @@ impl Server {
                 let reply = GetIrqInfo {
                     header: Header {
                         message_id: cmd.header.message_id,
-                        command: Command::GetIrqInfo,
+                        command: Command::GetIrqInfo as u16,
                         flags: HeaderFlags::Reply as u32,
                         message_size: size_of::<GetIrqInfo>() as u32,
                         ..Default::default()
@@ -1219,7 +1222,7 @@ impl Server {
 
                 let reply = Header {
                     message_id: cmd.header.message_id,
-                    command: Command::SetIrqs,
+                    command: Command::SetIrqs as u16,
                     flags: HeaderFlags::Reply as u32,
                     message_size: size_of::<Header>() as u32,
                     ..Default::default()
@@ -1251,7 +1254,7 @@ impl Server {
                 let reply = RegionAccess {
                     header: Header {
                         message_id: cmd.header.message_id,
-                        command: Command::RegionRead,
+                        command: Command::RegionRead as u16,
                         flags: HeaderFlags::Reply as u32,
                         message_size: size_of::<RegionAccess>() as u32 + count,
                         ..Default::default()
@@ -1289,7 +1292,7 @@ impl Server {
                 let reply = RegionAccess {
                     header: Header {
                         message_id: cmd.header.message_id,
-                        command: Command::RegionWrite,
+                        command: Command::RegionWrite as u16,
                         flags: HeaderFlags::Reply as u32,
                         message_size: size_of::<RegionAccess>() as u32,
                         ..Default::default()
@@ -1306,7 +1309,7 @@ impl Server {
                 backend.reset().map_err(Error::Backend)?;
                 let reply = Header {
                     message_id: header.message_id,
-                    command: Command::DeviceReset,
+                    command: Command::DeviceReset as u16,
                     flags: HeaderFlags::Reply as u32,
                     message_size: size_of::<Header>() as u32,
                     ..Default::default()

@@ -11,6 +11,9 @@ use std::fs::File;
 use std::mem::size_of;
 use std::os::unix::io::AsRawFd;
 
+#[cfg(not(test))]
+use log::{debug, error};
+
 use vfio_bindings::bindings::vfio::*;
 use vmm_sys_util::errno::Error as SysError;
 
@@ -42,6 +45,7 @@ ioctl_io_nr!(
 );
 ioctl_io_nr!(VFIO_DEVICE_GET_GFX_DMABUF, VFIO_TYPE.into(), VFIO_BASE + 15);
 ioctl_io_nr!(VFIO_DEVICE_IOEVENTFD, VFIO_TYPE.into(), VFIO_BASE + 16);
+ioctl_io_nr!(VFIO_DEVICE_FEATURE, VFIO_TYPE.into(), VFIO_BASE + 17);
 #[cfg(feature = "vfio_cdev")]
 ioctl_io_nr!(VFIO_DEVICE_BIND_IOMMUFD, VFIO_TYPE.into(), VFIO_BASE + 18);
 #[cfg(feature = "vfio_cdev")]
@@ -61,6 +65,7 @@ ioctl_io_nr!(VFIO_IOMMU_MAP_DMA, VFIO_TYPE.into(), VFIO_BASE + 13);
 ioctl_io_nr!(VFIO_IOMMU_UNMAP_DMA, VFIO_TYPE.into(), VFIO_BASE + 14);
 ioctl_io_nr!(VFIO_IOMMU_ENABLE, VFIO_TYPE.into(), VFIO_BASE + 15);
 ioctl_io_nr!(VFIO_IOMMU_DISABLE, VFIO_TYPE.into(), VFIO_BASE + 16);
+ioctl_io_nr!(VFIO_MIG_GET_PRECOPY_INFO, VFIO_TYPE.into(), VFIO_BASE + 21);
 
 #[cfg(not(test))]
 // Safety:
@@ -174,6 +179,10 @@ pub(crate) mod vfio_syscall {
         // SAFETY: we are the owner of self and container_raw_fd which are valid value.
         let ret = unsafe { ioctl_with_ref(group, VFIO_GROUP_UNSET_CONTAINER(), &container_raw_fd) };
         if ret < 0 {
+            error!(
+                "VFIO_GROUP_UNSET_CONTAINER ioctl failed: {}",
+                std::io::Error::last_os_error()
+            );
             Err(VfioError::GroupSetContainer)
         } else {
             Ok(())
@@ -313,6 +322,39 @@ pub(crate) mod vfio_syscall {
             unsafe { ioctl_with_ref(vfio_cdev, VFIO_DEVICE_DETACH_IOMMUFD_PT(), detach_data) };
         if ret < 0 {
             Err(VfioError::VfioDeviceDetachIommufdPt(SysError::last()))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn device_feature(
+        device: &VfioDevice,
+        feature: &mut vfio_device_feature,
+    ) -> Result<()> {
+        // SAFETY: 'device' is a valid vfio device fd. The kernel reads
+        // `argsz` to bound access to the buffer, which the caller sized
+        // accordingly.
+        let ret = unsafe { ioctl_with_mut_ref(device, VFIO_DEVICE_FEATURE(), feature) };
+        if ret < 0 {
+            let err = SysError::last();
+            debug!(
+                "VFIO_DEVICE_FEATURE ioctl failed (flags=0x{:x}): {}",
+                feature.flags, err
+            );
+            Err(VfioError::VfioDeviceFeature(err))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn mig_get_precopy_info(fd: &File, info: &mut vfio_precopy_info) -> Result<()> {
+        // SAFETY: 'fd' is the migration data_fd returned by set_migration_state.
+        // 'info' is caller-allocated with `argsz` set.
+        let ret = unsafe { ioctl_with_mut_ref(fd, VFIO_MIG_GET_PRECOPY_INFO(), info) };
+        if ret < 0 {
+            let err = SysError::last();
+            debug!("VFIO_MIG_GET_PRECOPY_INFO ioctl failed: {}", err);
+            Err(VfioError::VfioMigGetPrecopyInfo(err))
         } else {
             Ok(())
         }
@@ -595,6 +637,46 @@ pub(crate) mod vfio_syscall {
     ) -> Result<()> {
         Ok(())
     }
+
+    pub(crate) fn device_feature(
+        _device: &VfioDevice,
+        feature: &mut vfio_device_feature,
+    ) -> Result<()> {
+        let feature_id = feature.flags & VFIO_DEVICE_FEATURE_MASK;
+        // The test caller sized the buffer with vec_with_array_field so
+        // the trailing payload follows the header.
+        let payload_ptr = feature.data.as_mut_ptr();
+        match feature_id {
+            VFIO_DEVICE_FEATURE_MIGRATION => {
+                // SAFETY: caller allocated space for vfio_device_feature_migration.
+                let data = unsafe { &mut *(payload_ptr as *mut vfio_device_feature_migration) };
+                data.flags = VFIO_MIGRATION_STOP_COPY as u64;
+                Ok(())
+            }
+            VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE => {
+                // SAFETY: caller allocated space for vfio_device_feature_mig_state.
+                let data = unsafe { &mut *(payload_ptr as *mut vfio_device_feature_mig_state) };
+                if feature.flags & VFIO_DEVICE_FEATURE_GET != 0 {
+                    data.device_state = vfio_device_mig_state_VFIO_DEVICE_STATE_RUNNING;
+                }
+                data.data_fd = -1;
+                Ok(())
+            }
+            VFIO_DEVICE_FEATURE_MIG_DATA_SIZE => {
+                // SAFETY: caller allocated space for vfio_device_feature_mig_data_size.
+                let data = unsafe { &mut *(payload_ptr as *mut vfio_device_feature_mig_data_size) };
+                data.stop_copy_length = 0x100000;
+                Ok(())
+            }
+            _ => Err(VfioError::VfioDeviceFeature(SysError::new(libc::EINVAL))),
+        }
+    }
+
+    pub(crate) fn mig_get_precopy_info(_fd: &File, info: &mut vfio_precopy_info) -> Result<()> {
+        info.initial_bytes = 0;
+        info.dirty_bytes = 0;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -623,5 +705,7 @@ mod tests {
         assert_eq!(VFIO_DEVICE_ATTACH_IOMMUFD_PT(), 15223);
         #[cfg(feature = "vfio_cdev")]
         assert_eq!(VFIO_DEVICE_DETACH_IOMMUFD_PT(), 15224);
+        assert_eq!(VFIO_DEVICE_FEATURE(), 15221);
+        assert_eq!(VFIO_MIG_GET_PRECOPY_INFO(), 15225);
     }
 }

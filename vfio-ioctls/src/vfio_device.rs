@@ -9,7 +9,7 @@ use std::convert::{TryFrom as _, TryInto as _};
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
 use std::mem::{self, ManuallyDrop};
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::prelude::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -39,8 +39,6 @@ use mshv_bindings::{
 };
 #[cfg(all(feature = "mshv", not(test)))]
 use mshv_ioctls::DeviceFd as MshvDeviceFd;
-#[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
-use std::os::unix::io::FromRawFd;
 #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
 use vmm_sys_util::errno::Error;
 
@@ -1185,6 +1183,21 @@ pub struct VfioDevice {
     pub(crate) vfio_ops: Arc<dyn VfioOps>,
 }
 
+/// Query remaining migration data from a precopy data stream.
+///
+/// Operates on the data_fd returned by [`VfioDevice::set_migration_state`].
+/// Returns `(initial_bytes, dirty_bytes)`.
+pub fn vfio_mig_get_precopy_info(data_fd: &File) -> Result<(u64, u64)> {
+    let mut info = vfio_precopy_info {
+        argsz: mem::size_of::<vfio_precopy_info>() as u32,
+        flags: 0,
+        initial_bytes: 0,
+        dirty_bytes: 0,
+    };
+    vfio_syscall::mig_get_precopy_info(data_fd, &mut info)?;
+    Ok((info.initial_bytes, info.dirty_bytes))
+}
+
 impl VfioDevice {
     #[cfg(not(test))]
     fn get_group_id_from_path(sysfspath: &Path) -> Result<u32> {
@@ -1664,6 +1677,104 @@ impl VfioDevice {
 
         max_interrupts
     }
+
+    /// Query whether the device supports VFIO migration v2.
+    ///
+    /// Returns `Ok(Some(flags))` with the supported migration capabilities,
+    /// `Ok(None)` when the kernel or device does not support migration v2,
+    /// or `Err` on any other ioctl failure.
+    pub fn query_migration_support(&self) -> Result<Option<u64>> {
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_migration>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_migration>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_GET | VFIO_DEVICE_FEATURE_MIGRATION;
+        match vfio_syscall::device_feature(self, &mut feature_buf[0]) {
+            Ok(()) => {
+                // SAFETY: vec_with_array_field reserved size_of::<vfio_device_feature_migration>()
+                // bytes immediately after the header, and the kernel populated `flags` on success.
+                let flags = unsafe {
+                    (*(feature_buf[0].data.as_ptr() as *const vfio_device_feature_migration)).flags
+                };
+                Ok(Some(flags))
+            }
+            // ENOTTY means the kernel is too old. EINVAL means the device
+            // does not support the feature.
+            Err(VfioError::VfioDeviceFeature(e))
+                if e.errno() == libc::ENOTTY || e.errno() == libc::EINVAL =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Set the device migration state.
+    ///
+    /// Returns `Ok(Some(file))` with the data fd when one is provided by the
+    /// kernel (precopy/stop-copy/resuming transitions), or `Ok(None)`.
+    pub fn set_migration_state(&self, state: u32) -> Result<Option<File>> {
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_mig_state>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_mig_state>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_SET | VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE;
+        {
+            // SAFETY: vec_with_array_field reserved size_of::<vfio_device_feature_mig_state>()
+            // bytes immediately after the header.
+            let payload = unsafe {
+                &mut *(feature_buf[0].data.as_mut_ptr() as *mut vfio_device_feature_mig_state)
+            };
+            payload.device_state = state;
+            payload.data_fd = -1;
+        }
+        vfio_syscall::device_feature(self, &mut feature_buf[0])?;
+        // SAFETY: same buffer as above. The kernel may have written `data_fd`.
+        let data_fd = unsafe {
+            (*(feature_buf[0].data.as_ptr() as *const vfio_device_feature_mig_state)).data_fd
+        };
+        if data_fd >= 0 {
+            // SAFETY: data_fd is a valid file descriptor returned by the kernel.
+            Ok(Some(unsafe { File::from_raw_fd(data_fd) }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get the current device migration state.
+    pub fn get_migration_state(&self) -> Result<u32> {
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_mig_state>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_mig_state>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_GET | VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE;
+        vfio_syscall::device_feature(self, &mut feature_buf[0])?;
+        // SAFETY: vec_with_array_field reserved the payload bytes after the header.
+        let device_state = unsafe {
+            (*(feature_buf[0].data.as_ptr() as *const vfio_device_feature_mig_state)).device_state
+        };
+        Ok(device_state)
+    }
+
+    /// Query the maximum data size for a single stop-copy transfer.
+    pub fn get_mig_data_size(&self) -> Result<u64> {
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_mig_data_size>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_mig_data_size>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_GET | VFIO_DEVICE_FEATURE_MIG_DATA_SIZE;
+        vfio_syscall::device_feature(self, &mut feature_buf[0])?;
+        // SAFETY: vec_with_array_field reserved the payload bytes after the header.
+        let stop_copy_length = unsafe {
+            (*(feature_buf[0].data.as_ptr() as *const vfio_device_feature_mig_data_size))
+                .stop_copy_length
+        };
+        Ok(stop_copy_length)
+    }
 }
 
 impl AsRawFd for VfioDevice {
@@ -1825,6 +1936,60 @@ mod tests {
             common: VfioCommon { device_fd: None },
             groups: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn create_vfio_device() -> VfioDevice {
+        let tmp_file = TempFile::new().unwrap();
+        let path = tmp_file.as_path();
+        let device = File::open(path).unwrap();
+        let dev_info = vfio_syscall::create_dev_info_for_test();
+        let device_info = VfioDeviceInfo::new(device, &dev_info);
+        VfioDevice {
+            device: ManuallyDrop::new(File::open(path).unwrap()),
+            flags: 0,
+            regions: device_info.get_regions().unwrap(),
+            irqs: device_info.get_irqs().unwrap(),
+            sysfspath: Some(path.to_path_buf()),
+            vfio_ops: Arc::new(create_vfio_container()),
+        }
+    }
+
+    #[test]
+    fn test_query_migration_support() {
+        let device = create_vfio_device();
+        let result = device.query_migration_support().unwrap();
+        assert_eq!(result, Some(VFIO_MIGRATION_STOP_COPY as u64));
+    }
+
+    #[test]
+    fn test_set_migration_state() {
+        let device = create_vfio_device();
+        let result = device
+            .set_migration_state(vfio_device_mig_state_VFIO_DEVICE_STATE_STOP)
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_migration_state() {
+        let device = create_vfio_device();
+        let state = device.get_migration_state().unwrap();
+        assert_eq!(state, vfio_device_mig_state_VFIO_DEVICE_STATE_RUNNING);
+    }
+
+    #[test]
+    fn test_get_mig_data_size() {
+        let device = create_vfio_device();
+        let size = device.get_mig_data_size().unwrap();
+        assert_eq!(size, 0x100000);
+    }
+
+    #[test]
+    fn test_mig_get_precopy_info() {
+        let tmp_file = TempFile::new().unwrap();
+        let file = File::open(tmp_file.as_path()).unwrap();
+        let result = vfio_mig_get_precopy_info(&file).unwrap();
+        assert_eq!(result, (0, 0));
     }
 
     #[test]

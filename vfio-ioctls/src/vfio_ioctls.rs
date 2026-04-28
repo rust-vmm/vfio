@@ -11,6 +11,9 @@ use std::fs::File;
 use std::mem::size_of;
 use std::os::unix::io::AsRawFd;
 
+#[cfg(not(test))]
+use log::error;
+
 use vfio_bindings::bindings::vfio::*;
 use vmm_sys_util::errno::Error as SysError;
 
@@ -174,6 +177,10 @@ pub(crate) mod vfio_syscall {
         // SAFETY: we are the owner of self and container_raw_fd which are valid value.
         let ret = unsafe { ioctl_with_ref(group, VFIO_GROUP_UNSET_CONTAINER(), &container_raw_fd) };
         if ret < 0 {
+            error!(
+                "VFIO_GROUP_UNSET_CONTAINER ioctl failed: {}",
+                std::io::Error::last_os_error()
+            );
             Err(VfioError::GroupSetContainer)
         } else {
             Ok(())

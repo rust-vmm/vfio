@@ -8,8 +8,9 @@ use std::collections::HashMap;
 use std::convert::{TryFrom as _, TryInto as _};
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
 use std::mem::{self, ManuallyDrop};
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::prelude::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -39,8 +40,6 @@ use mshv_bindings::{
 };
 #[cfg(all(feature = "mshv", not(test)))]
 use mshv_ioctls::DeviceFd as MshvDeviceFd;
-#[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
-use std::os::unix::io::FromRawFd;
 #[cfg(all(any(feature = "kvm", feature = "mshv"), not(test)))]
 use vmm_sys_util::errno::Error;
 
@@ -1183,6 +1182,16 @@ pub struct VfioDevice {
     pub(crate) irqs: HashMap<u32, VfioIrq>,
     pub(crate) sysfspath: Option<PathBuf>,
     pub(crate) vfio_ops: Arc<dyn VfioOps>,
+    pub(crate) migration_data_fd: Mutex<Option<File>>,
+}
+
+/// Remaining migration data reported by the kernel during precopy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PrecopyInfo {
+    /// Bytes that must still be transferred to complete the initial state.
+    pub initial_bytes: u64,
+    /// Bytes of dirty state that have accumulated since precopy started.
+    pub dirty_bytes: u64,
 }
 
 impl VfioDevice {
@@ -1289,6 +1298,7 @@ impl VfioDevice {
             irqs,
             sysfspath: Some(sysfspath.to_path_buf()),
             vfio_ops,
+            migration_data_fd: Mutex::new(None),
         })
     }
 
@@ -1324,6 +1334,7 @@ impl VfioDevice {
             irqs,
             sysfspath: None,
             vfio_ops,
+            migration_data_fd: Mutex::new(None),
         })
     }
 
@@ -1697,6 +1708,54 @@ impl VfioDevice {
         }
     }
 
+    /// Set the device migration state.
+    ///
+    /// Transitions into a streaming state (PRE_COPY, PRE_COPY_P2P, STOP_COPY,
+    /// RESUMING) from a non-streaming state return a fresh data fd from the
+    /// kernel. The method stores it inside `VfioDevice` for the migration
+    /// data read and write helpers to use. Transitions between two streaming
+    /// states keep the existing fd. Transitions to a non-streaming state
+    /// drop any previously stored fd. On ioctl error the cached fd is also
+    /// dropped, since a partially completed state transition may already have
+    /// closed it on the kernel side.
+    pub fn set_migration_state(&self, state: u32) -> Result<()> {
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_mig_state>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_mig_state>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_SET | VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE;
+        {
+            // SAFETY: vec_with_array_field reserved size_of::<vfio_device_feature_mig_state>()
+            // bytes immediately after the header.
+            let payload = unsafe {
+                &mut *(feature_buf[0].data.as_mut_ptr() as *mut vfio_device_feature_mig_state)
+            };
+            payload.device_state = state;
+            payload.data_fd = -1;
+        }
+        if let Err(e) = vfio_syscall::device_feature(self, &mut feature_buf[0]) {
+            *self.migration_data_fd.lock().unwrap() = None;
+            return Err(e);
+        }
+        // SAFETY: same buffer as above. The kernel may have written `data_fd`.
+        let data_fd = unsafe {
+            (*(feature_buf[0].data.as_ptr() as *const vfio_device_feature_mig_state)).data_fd
+        };
+        let is_streaming = state == vfio_device_mig_state_VFIO_DEVICE_STATE_PRE_COPY
+            || state == vfio_device_mig_state_VFIO_DEVICE_STATE_PRE_COPY_P2P
+            || state == vfio_device_mig_state_VFIO_DEVICE_STATE_STOP_COPY
+            || state == vfio_device_mig_state_VFIO_DEVICE_STATE_RESUMING;
+        let mut guard = self.migration_data_fd.lock().unwrap();
+        if data_fd >= 0 {
+            // SAFETY: data_fd is a valid file descriptor returned by the kernel.
+            *guard = Some(unsafe { File::from_raw_fd(data_fd) });
+        } else if !is_streaming {
+            *guard = None;
+        }
+        Ok(())
+    }
+
     /// Get the current device migration state.
     pub fn get_migration_state(&self) -> Result<u32> {
         let mut feature_buf =
@@ -1728,6 +1787,47 @@ impl VfioDevice {
                 .stop_copy_length
         };
         Ok(stop_copy_length)
+    }
+
+    /// Query remaining migration data on the stored precopy data fd.
+    pub fn mig_get_precopy_info(&self) -> Result<PrecopyInfo> {
+        let guard = self.migration_data_fd.lock().unwrap();
+        let fd = guard.as_ref().ok_or(VfioError::NoMigrationDataFd)?;
+        let mut info = vfio_precopy_info {
+            argsz: mem::size_of::<vfio_precopy_info>() as u32,
+            ..Default::default()
+        };
+        vfio_syscall::mig_get_precopy_info(fd, &mut info)?;
+        Ok(PrecopyInfo {
+            initial_bytes: info.initial_bytes,
+            dirty_bytes: info.dirty_bytes,
+        })
+    }
+
+    /// Read from the stored migration data fd into `buf`.
+    pub fn read_migration_data(&self, buf: &mut [u8]) -> Result<usize> {
+        let mut guard = self.migration_data_fd.lock().unwrap();
+        let fd = guard.as_mut().ok_or(VfioError::NoMigrationDataFd)?;
+        fd.read(buf).map_err(VfioError::VfioMigrationDataIo)
+    }
+
+    /// Drain the stored migration data fd until EOF.
+    pub fn read_migration_data_to_end(&self) -> Result<Vec<u8>> {
+        // Pre-size to avoid Vec reallocations during read_to_end.
+        let hint = self.get_mig_data_size().unwrap_or(0) as usize;
+        let mut guard = self.migration_data_fd.lock().unwrap();
+        let fd = guard.as_mut().ok_or(VfioError::NoMigrationDataFd)?;
+        let mut data = Vec::with_capacity(hint);
+        fd.read_to_end(&mut data)
+            .map_err(VfioError::VfioMigrationDataIo)?;
+        Ok(data)
+    }
+
+    /// Write the entire `data` slice to the stored migration data fd.
+    pub fn write_migration_data(&self, data: &[u8]) -> Result<()> {
+        let mut guard = self.migration_data_fd.lock().unwrap();
+        let fd = guard.as_mut().ok_or(VfioError::NoMigrationDataFd)?;
+        fd.write_all(data).map_err(VfioError::VfioMigrationDataIo)
     }
 }
 
@@ -1905,6 +2005,7 @@ mod tests {
             irqs: device_info.get_irqs().unwrap(),
             sysfspath: Some(path.to_path_buf()),
             vfio_ops: Arc::new(create_vfio_container()),
+            migration_data_fd: Mutex::new(None),
         }
     }
 
@@ -1913,6 +2014,50 @@ mod tests {
         let device = create_vfio_device();
         let result = device.query_migration_support().unwrap();
         assert_eq!(result, Some(VFIO_MIGRATION_STOP_COPY as u64));
+    }
+
+    #[test]
+    fn test_set_migration_state() {
+        let device = create_vfio_device();
+        device
+            .set_migration_state(vfio_device_mig_state_VFIO_DEVICE_STATE_STOP)
+            .unwrap();
+        assert!(device.migration_data_fd.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_set_migration_state_drops_fd_on_error() {
+        let device = create_vfio_device();
+        let tmp_file = TempFile::new().unwrap();
+        *device.migration_data_fd.lock().unwrap() = Some(File::open(tmp_file.as_path()).unwrap());
+
+        // u32::MAX is the test mock's sentinel for the ioctl failure path.
+        assert!(matches!(
+            device.set_migration_state(u32::MAX),
+            Err(VfioError::VfioDeviceFeature(_))
+        ));
+        assert!(device.migration_data_fd.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_set_migration_state_keeps_fd_across_streaming_transitions() {
+        // The test syscall always returns data_fd = -1 (no kernel-allocated fd
+        // in unit tests). Pre-populate the stored fd to simulate what the
+        // kernel would have handed us on a prior PRE_COPY entry, then issue a
+        // streaming-to-streaming transition and check the fd survives.
+        let device = create_vfio_device();
+        let tmp_file = TempFile::new().unwrap();
+        *device.migration_data_fd.lock().unwrap() = Some(File::open(tmp_file.as_path()).unwrap());
+
+        device
+            .set_migration_state(vfio_device_mig_state_VFIO_DEVICE_STATE_STOP_COPY)
+            .unwrap();
+        assert!(device.migration_data_fd.lock().unwrap().is_some());
+
+        device
+            .set_migration_state(vfio_device_mig_state_VFIO_DEVICE_STATE_STOP)
+            .unwrap();
+        assert!(device.migration_data_fd.lock().unwrap().is_none());
     }
 
     #[test]
@@ -1927,6 +2072,37 @@ mod tests {
         let device = create_vfio_device();
         let size = device.get_mig_data_size().unwrap();
         assert_eq!(size, 0x100000);
+    }
+
+    #[test]
+    fn test_mig_get_precopy_info_without_fd() {
+        let device = create_vfio_device();
+        assert!(matches!(
+            device.mig_get_precopy_info(),
+            Err(VfioError::NoMigrationDataFd)
+        ));
+    }
+
+    #[test]
+    fn test_mig_get_precopy_info_with_fd() {
+        let device = create_vfio_device();
+        let tmp_file = TempFile::new().unwrap();
+        *device.migration_data_fd.lock().unwrap() = Some(File::open(tmp_file.as_path()).unwrap());
+        let info = device.mig_get_precopy_info().unwrap();
+        assert_eq!(info, PrecopyInfo::default());
+    }
+
+    #[test]
+    fn test_migration_data_io_without_fd() {
+        let device = create_vfio_device();
+        assert!(matches!(
+            device.read_migration_data_to_end(),
+            Err(VfioError::NoMigrationDataFd)
+        ));
+        assert!(matches!(
+            device.write_migration_data(b""),
+            Err(VfioError::NoMigrationDataFd)
+        ));
     }
 
     #[test]

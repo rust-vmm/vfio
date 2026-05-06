@@ -6,6 +6,12 @@
 - [[148]](https://github.com/rust-vmm/vfio/pull/148) Add `VfioDevice::new_from_fd` to construct a `VfioDevice` from
   a pre-opened vfio device file (cdev mode only).
 
+- [[140]](https://github.com/rust-vmm/vfio/pull/140) Add VFIO migration v2 ioctl wrappers
+  on `VfioDevice` (`query_migration_support`, `set_migration_state`,
+  `get_migration_state`, `get_mig_data_size`, `mig_get_precopy_info`,
+  `read_migration_data`, `read_migration_data_to_end`, `write_migration_data`).
+  The migration data fd is held internally and not exposed to callers.
+
 ## Fixed
 
 # [v0.6.0]

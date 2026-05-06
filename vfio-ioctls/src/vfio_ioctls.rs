@@ -65,6 +65,7 @@ ioctl_io_nr!(VFIO_IOMMU_MAP_DMA, VFIO_TYPE.into(), VFIO_BASE + 13);
 ioctl_io_nr!(VFIO_IOMMU_UNMAP_DMA, VFIO_TYPE.into(), VFIO_BASE + 14);
 ioctl_io_nr!(VFIO_IOMMU_ENABLE, VFIO_TYPE.into(), VFIO_BASE + 15);
 ioctl_io_nr!(VFIO_IOMMU_DISABLE, VFIO_TYPE.into(), VFIO_BASE + 16);
+ioctl_io_nr!(VFIO_MIG_GET_PRECOPY_INFO, VFIO_TYPE.into(), VFIO_BASE + 21);
 
 #[cfg(not(test))]
 // Safety:
@@ -336,6 +337,17 @@ pub(crate) mod vfio_syscall {
         let ret = unsafe { ioctl_with_mut_ref(device, VFIO_DEVICE_FEATURE(), feature) };
         if ret < 0 {
             Err(VfioError::VfioDeviceFeature(SysError::last()))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn mig_get_precopy_info(fd: &File, info: &mut vfio_precopy_info) -> Result<()> {
+        // SAFETY: 'fd' is the migration data_fd returned by set_migration_state.
+        // 'info' is caller-allocated with `argsz` set.
+        let ret = unsafe { ioctl_with_mut_ref(fd, VFIO_MIG_GET_PRECOPY_INFO(), info) };
+        if ret < 0 {
+            Err(VfioError::VfioMigGetPrecopyInfo(SysError::last()))
         } else {
             Ok(())
         }
@@ -639,6 +651,9 @@ pub(crate) mod vfio_syscall {
                 let data = unsafe { &mut *(payload_ptr as *mut vfio_device_feature_mig_state) };
                 if feature.flags & VFIO_DEVICE_FEATURE_GET != 0 {
                     data.device_state = vfio_device_mig_state_VFIO_DEVICE_STATE_RUNNING;
+                } else if data.device_state == u32::MAX {
+                    // Sentinel used by unit tests to exercise the failure path.
+                    return Err(VfioError::VfioDeviceFeature(SysError::new(libc::EINVAL)));
                 }
                 data.data_fd = -1;
                 Ok(())
@@ -651,6 +666,12 @@ pub(crate) mod vfio_syscall {
             }
             _ => Err(VfioError::VfioDeviceFeature(SysError::new(libc::EINVAL))),
         }
+    }
+
+    pub(crate) fn mig_get_precopy_info(_fd: &File, info: &mut vfio_precopy_info) -> Result<()> {
+        info.initial_bytes = 0;
+        info.dirty_bytes = 0;
+        Ok(())
     }
 }
 
@@ -681,5 +702,6 @@ mod tests {
         #[cfg(feature = "vfio_cdev")]
         assert_eq!(VFIO_DEVICE_DETACH_IOMMUFD_PT(), 15224);
         assert_eq!(VFIO_DEVICE_FEATURE(), 15221);
+        assert_eq!(VFIO_MIG_GET_PRECOPY_INFO(), 15225);
     }
 }

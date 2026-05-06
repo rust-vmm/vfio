@@ -68,7 +68,7 @@ mod vfio_device;
 mod vfio_ioctls;
 
 pub use vfio_device::{
-    VfioContainer, VfioDevice, VfioDeviceFd, VfioGroup, VfioIrq, VfioOps, VfioRegion,
+    PrecopyInfo, VfioContainer, VfioDevice, VfioDeviceFd, VfioGroup, VfioIrq, VfioOps, VfioRegion,
     VfioRegionInfoCap, VfioRegionInfoCapNvlink2Lnkspd, VfioRegionInfoCapNvlink2Ssatgt,
     VfioRegionInfoCapSparseMmap, VfioRegionInfoCapType, VfioRegionSparseMmapArea,
 };
@@ -169,6 +169,12 @@ pub enum VfioError {
     IommufdIoctlError(#[source] IommufdError),
     #[error("failed to execute VFIO device feature ioctl: {0}")]
     VfioDeviceFeature(#[source] SysError),
+    #[error("failed to get migration precopy info: {0}")]
+    VfioMigGetPrecopyInfo(#[source] SysError),
+    #[error("VFIO migration data fd is not present")]
+    NoMigrationDataFd,
+    #[error("VFIO migration data I/O failed: {0}")]
+    VfioMigrationDataIo(#[source] io::Error),
 }
 
 /// Specialized version of `Result` for VFIO subsystem.

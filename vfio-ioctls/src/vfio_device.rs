@@ -1664,6 +1664,71 @@ impl VfioDevice {
 
         max_interrupts
     }
+
+    /// Query whether the device supports VFIO migration v2.
+    ///
+    /// Returns `Ok(Some(flags))` with the supported migration capabilities,
+    /// `Ok(None)` when the kernel or device does not support migration v2,
+    /// or `Err` on any other ioctl failure.
+    pub fn query_migration_support(&self) -> Result<Option<u64>> {
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_migration>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_migration>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_GET | VFIO_DEVICE_FEATURE_MIGRATION;
+        match vfio_syscall::device_feature(self, &mut feature_buf[0]) {
+            Ok(()) => {
+                // SAFETY: vec_with_array_field reserved size_of::<vfio_device_feature_migration>()
+                // bytes immediately after the header, and the kernel populated `flags` on success.
+                let flags = unsafe {
+                    (*(feature_buf[0].data.as_ptr() as *const vfio_device_feature_migration)).flags
+                };
+                Ok(Some(flags))
+            }
+            // ENOTTY means the kernel is too old. EINVAL means the device
+            // does not support the feature.
+            Err(VfioError::VfioDeviceFeature(e))
+                if e.errno() == libc::ENOTTY || e.errno() == libc::EINVAL =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Get the current device migration state.
+    pub fn get_migration_state(&self) -> Result<u32> {
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_mig_state>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_mig_state>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_GET | VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE;
+        vfio_syscall::device_feature(self, &mut feature_buf[0])?;
+        // SAFETY: vec_with_array_field reserved the payload bytes after the header.
+        let device_state = unsafe {
+            (*(feature_buf[0].data.as_ptr() as *const vfio_device_feature_mig_state)).device_state
+        };
+        Ok(device_state)
+    }
+
+    /// Query the maximum data size for a single stop-copy transfer.
+    pub fn get_mig_data_size(&self) -> Result<u64> {
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_mig_data_size>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_mig_data_size>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_GET | VFIO_DEVICE_FEATURE_MIG_DATA_SIZE;
+        vfio_syscall::device_feature(self, &mut feature_buf[0])?;
+        // SAFETY: vec_with_array_field reserved the payload bytes after the header.
+        let stop_copy_length = unsafe {
+            (*(feature_buf[0].data.as_ptr() as *const vfio_device_feature_mig_data_size))
+                .stop_copy_length
+        };
+        Ok(stop_copy_length)
+    }
 }
 
 impl AsRawFd for VfioDevice {
@@ -1825,6 +1890,43 @@ mod tests {
             common: VfioCommon { device_fd: None },
             groups: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn create_vfio_device() -> VfioDevice {
+        let tmp_file = TempFile::new().unwrap();
+        let path = tmp_file.as_path();
+        let device = File::open(path).unwrap();
+        let dev_info = vfio_syscall::create_dev_info_for_test();
+        let device_info = VfioDeviceInfo::new(device, &dev_info);
+        VfioDevice {
+            device: ManuallyDrop::new(File::open(path).unwrap()),
+            flags: 0,
+            regions: device_info.get_regions().unwrap(),
+            irqs: device_info.get_irqs().unwrap(),
+            sysfspath: Some(path.to_path_buf()),
+            vfio_ops: Arc::new(create_vfio_container()),
+        }
+    }
+
+    #[test]
+    fn test_query_migration_support() {
+        let device = create_vfio_device();
+        let result = device.query_migration_support().unwrap();
+        assert_eq!(result, Some(VFIO_MIGRATION_STOP_COPY as u64));
+    }
+
+    #[test]
+    fn test_get_migration_state() {
+        let device = create_vfio_device();
+        let state = device.get_migration_state().unwrap();
+        assert_eq!(state, vfio_device_mig_state_VFIO_DEVICE_STATE_RUNNING);
+    }
+
+    #[test]
+    fn test_get_mig_data_size() {
+        let device = create_vfio_device();
+        let size = device.get_mig_data_size().unwrap();
+        assert_eq!(size, 0x100000);
     }
 
     #[test]

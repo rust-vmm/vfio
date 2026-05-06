@@ -167,6 +167,8 @@ pub enum VfioError {
     #[cfg(feature = "vfio_cdev")]
     #[error("failed iommufd ioctl")]
     IommufdIoctlError(#[source] IommufdError),
+    #[error("failed to execute VFIO device feature ioctl: {0}")]
+    VfioDeviceFeature(#[source] SysError),
 }
 
 /// Specialized version of `Result` for VFIO subsystem.

@@ -45,6 +45,7 @@ ioctl_io_nr!(
 );
 ioctl_io_nr!(VFIO_DEVICE_GET_GFX_DMABUF, VFIO_TYPE.into(), VFIO_BASE + 15);
 ioctl_io_nr!(VFIO_DEVICE_IOEVENTFD, VFIO_TYPE.into(), VFIO_BASE + 16);
+ioctl_io_nr!(VFIO_DEVICE_FEATURE, VFIO_TYPE.into(), VFIO_BASE + 17);
 #[cfg(feature = "vfio_cdev")]
 ioctl_io_nr!(VFIO_DEVICE_BIND_IOMMUFD, VFIO_TYPE.into(), VFIO_BASE + 18);
 #[cfg(feature = "vfio_cdev")]
@@ -320,6 +321,21 @@ pub(crate) mod vfio_syscall {
             unsafe { ioctl_with_ref(vfio_cdev, VFIO_DEVICE_DETACH_IOMMUFD_PT(), detach_data) };
         if ret < 0 {
             Err(VfioError::VfioDeviceDetachIommufdPt(SysError::last()))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn device_feature(
+        device: &VfioDevice,
+        feature: &mut vfio_device_feature,
+    ) -> Result<()> {
+        // SAFETY: 'device' is a valid vfio device fd. The kernel reads
+        // `argsz` to bound access to the buffer, which the caller sized
+        // accordingly.
+        let ret = unsafe { ioctl_with_mut_ref(device, VFIO_DEVICE_FEATURE(), feature) };
+        if ret < 0 {
+            Err(VfioError::VfioDeviceFeature(SysError::last()))
         } else {
             Ok(())
         }
@@ -602,6 +618,40 @@ pub(crate) mod vfio_syscall {
     ) -> Result<()> {
         Ok(())
     }
+
+    pub(crate) fn device_feature(
+        _device: &VfioDevice,
+        feature: &mut vfio_device_feature,
+    ) -> Result<()> {
+        let feature_id = feature.flags & VFIO_DEVICE_FEATURE_MASK;
+        // The test caller sized the buffer with vec_with_array_field so
+        // the trailing payload follows the header.
+        let payload_ptr = feature.data.as_mut_ptr();
+        match feature_id {
+            VFIO_DEVICE_FEATURE_MIGRATION => {
+                // SAFETY: caller allocated space for vfio_device_feature_migration.
+                let data = unsafe { &mut *(payload_ptr as *mut vfio_device_feature_migration) };
+                data.flags = VFIO_MIGRATION_STOP_COPY as u64;
+                Ok(())
+            }
+            VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE => {
+                // SAFETY: caller allocated space for vfio_device_feature_mig_state.
+                let data = unsafe { &mut *(payload_ptr as *mut vfio_device_feature_mig_state) };
+                if feature.flags & VFIO_DEVICE_FEATURE_GET != 0 {
+                    data.device_state = vfio_device_mig_state_VFIO_DEVICE_STATE_RUNNING;
+                }
+                data.data_fd = -1;
+                Ok(())
+            }
+            VFIO_DEVICE_FEATURE_MIG_DATA_SIZE => {
+                // SAFETY: caller allocated space for vfio_device_feature_mig_data_size.
+                let data = unsafe { &mut *(payload_ptr as *mut vfio_device_feature_mig_data_size) };
+                data.stop_copy_length = 0x100000;
+                Ok(())
+            }
+            _ => Err(VfioError::VfioDeviceFeature(SysError::new(libc::EINVAL))),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -630,5 +680,6 @@ mod tests {
         assert_eq!(VFIO_DEVICE_ATTACH_IOMMUFD_PT(), 15223);
         #[cfg(feature = "vfio_cdev")]
         assert_eq!(VFIO_DEVICE_DETACH_IOMMUFD_PT(), 15224);
+        assert_eq!(VFIO_DEVICE_FEATURE(), 15221);
     }
 }

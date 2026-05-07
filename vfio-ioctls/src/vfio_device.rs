@@ -679,6 +679,8 @@ impl AsRawFd for VfioGroup {
 pub struct VfioIommufd {
     pub(crate) iommufd: Arc<IommuFd>,
     pub(crate) ioas_id: u32,
+    // True when we allocated the IOAS and must destroy it on drop
+    owns_ioas: bool,
     common: VfioCommon,
 }
 
@@ -696,6 +698,7 @@ impl VfioIommufd {
         ioas_id: Option<u32>,
         device_fd: Option<VfioContainerDeviceHandle>,
     ) -> Result<Self> {
+        let owns_ioas = ioas_id.is_none();
         let ioas_id = match ioas_id {
             Some(ioas_id) => ioas_id,
             None => {
@@ -717,6 +720,7 @@ impl VfioIommufd {
         let vfio_iommufd = VfioIommufd {
             iommufd,
             ioas_id,
+            owns_ioas,
             common: VfioCommon { device_fd },
         };
 
@@ -793,6 +797,27 @@ impl VfioIommufd {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "vfio_cdev")]
+impl Drop for VfioIommufd {
+    fn drop(&mut self) {
+        // Destroy the IOAS we allocated so a long-lived (externally
+        // supplied) iommufd does not accumulate orphan IOAS objects.
+        // By the time Drop runs, the `Arc<dyn VfioOps>` chain has
+        // already dropped every `VfioDevice`, each of which detached
+        // itself from this IOAS, so the kernel refcount is back to 1
+        // and IOMMU_DESTROY won't return -EBUSY. The destroy implicitly
+        // unmaps any remaining mappings too.
+        if self.owns_ioas {
+            if let Err(e) = self.iommufd.destroy_iommu_object(self.ioas_id) {
+                error!(
+                    "Failed to destroy IOAS {} on VfioIommufd drop: {}",
+                    self.ioas_id, e
+                );
+            }
+        }
     }
 }
 

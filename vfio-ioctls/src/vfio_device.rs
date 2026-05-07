@@ -1369,6 +1369,50 @@ impl VfioDevice {
         })
     }
 
+    /// Construct a `VfioDevice` from a cdev file that is already
+    /// bound to `vfio_ops`'s iommufd.
+    ///
+    /// The cdev's bind state lives on the kernel `vfio_device_file`
+    /// and survives as long as the cdev struct file stays open.
+    /// This entry point skips bind step for use cases where the
+    /// caller already has a cdev file that is bound to the iommufd.
+    ///
+    /// # Parameters
+    /// * `device`: an opened, already-bound vfio cdev file whose
+    ///   ownership is transferred into the returned `VfioDevice`.
+    /// * `vfio_ops`: must be a [`VfioIommufd`] whose iommufd is the
+    ///   same one the cdev was previously bound against.
+    #[cfg(feature = "vfio_cdev")]
+    pub fn new_from_bound_fd(device: File, vfio_ops: Arc<dyn VfioOps>) -> Result<Self> {
+        let vfio_iommufd = vfio_ops
+            .as_any()
+            .downcast_ref::<VfioIommufd>()
+            .ok_or(VfioError::DowncastVfioOps)?;
+
+        // Add the vfio cdev file to VFIO-KVM device tracking
+        vfio_iommufd
+            .common
+            .device_set_fd(device.as_raw_fd(), true)?;
+        // Associate the vfio device to the IOAS within the bound iommufd
+        Self::attach_cdev_to_ioas(&device, vfio_iommufd)?;
+
+        let dev_info = VfioDeviceInfo::get_device_info(&device)?;
+        let device_info = VfioDeviceInfo::new(device, &dev_info);
+        let regions = device_info.get_regions()?;
+        let irqs = device_info.get_irqs()?;
+
+        Ok(VfioDevice {
+            device: ManuallyDrop::new(device_info.device),
+            flags: device_info.flags,
+            regions,
+            irqs,
+            sysfspath: None,
+            vfio_ops,
+            migration_data_fd: Mutex::new(None),
+            dma_logging_started: Mutex::new(false),
+        })
+    }
+
     /// VFIO device reset only if the device supports being reset.
     pub fn reset(&self) {
         if self.flags & VFIO_DEVICE_FLAGS_RESET != 0 {
@@ -2699,6 +2743,19 @@ mod tests {
 
         assert!(matches!(
             VfioDevice::new_from_fd(device, container),
+            Err(VfioError::DowncastVfioOps)
+        ));
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    #[test]
+    fn test_vfio_device_new_from_bound_fd_rejects_container() {
+        let tmp_file = TempFile::new().unwrap();
+        let device = File::open(tmp_file.as_path()).unwrap();
+        let container: Arc<dyn VfioOps> = Arc::new(create_vfio_container());
+
+        assert!(matches!(
+            VfioDevice::new_from_bound_fd(device, container),
             Err(VfioError::DowncastVfioOps)
         ));
     }

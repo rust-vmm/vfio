@@ -12,7 +12,7 @@
   `read_migration_data`, `read_migration_data_to_end`, `write_migration_data`).
   The migration data fd is held internally and not exposed to callers.
 
-- Add VFIO DMA dirty page logging methods on `VfioDevice`
+- [[150]](https://github.com/rust-vmm/vfio/pull/150) Add VFIO DMA dirty page logging methods on `VfioDevice`
   (`start_dma_logging`, `stop_dma_logging`, `report_dma_logging`) used by
   live migration to track guest pages dirtied by device DMA. Adds a
   public `DmaLoggingRange { iova, length }` struct. `start_dma_logging`
@@ -20,6 +20,9 @@
   `report_dma_logging`. Logging state is tracked per device so calling
   `start_dma_logging` twice, or `stop`/`report` without an active
   session, returns an error instead of issuing the ioctl.
+
+- [[153]](https://github.com/rust-vmm/vfio/pull/153) Add `VfioDevice::new_from_bound_fd` to construct a `VfioDevice`
+   from a pre-opened vfio device file that is already bound to an iommufd (cdev mode only).
 
 ## Fixed
 

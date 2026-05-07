@@ -37,4 +37,4 @@ mshv-bindings = { version = "0.6.5", features = [
 ], optional = true }
 mshv-ioctls = { version = "0.6.5", optional = true }
 iommufd-bindings = { version = "0.1.0", optional = true }
-iommufd-ioctls = { version = "0.1.0", optional = true }
+iommufd-ioctls = { version = "0.2.0", optional = true }

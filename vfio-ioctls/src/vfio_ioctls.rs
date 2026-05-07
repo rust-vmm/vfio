@@ -664,6 +664,24 @@ pub(crate) mod vfio_syscall {
                 data.stop_copy_length = 0x100000;
                 Ok(())
             }
+            VFIO_DEVICE_FEATURE_DMA_LOGGING_START => Ok(()),
+            VFIO_DEVICE_FEATURE_DMA_LOGGING_STOP => Ok(()),
+            VFIO_DEVICE_FEATURE_DMA_LOGGING_REPORT => {
+                // SAFETY: caller allocated space for vfio_device_feature_dma_logging_report.
+                let data =
+                    unsafe { &mut *(payload_ptr as *mut vfio_device_feature_dma_logging_report) };
+                // Write a known pattern (all bits set in the first u64) so
+                // unit tests can distinguish a real ioctl path from an
+                // untouched zero buffer.
+                if data.bitmap != 0 {
+                    // SAFETY: data.bitmap is a pointer to a Vec<u64> owned
+                    // by the caller, and we write exactly one u64 worth.
+                    unsafe {
+                        *(data.bitmap as *mut u64) = u64::MAX;
+                    }
+                }
+                Ok(())
+            }
             _ => Err(VfioError::VfioDeviceFeature(SysError::new(libc::EINVAL))),
         }
     }

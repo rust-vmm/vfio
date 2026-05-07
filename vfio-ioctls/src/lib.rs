@@ -68,9 +68,10 @@ mod vfio_device;
 mod vfio_ioctls;
 
 pub use vfio_device::{
-    PrecopyInfo, VfioContainer, VfioDevice, VfioDeviceFd, VfioGroup, VfioIrq, VfioOps, VfioRegion,
-    VfioRegionInfoCap, VfioRegionInfoCapNvlink2Lnkspd, VfioRegionInfoCapNvlink2Ssatgt,
-    VfioRegionInfoCapSparseMmap, VfioRegionInfoCapType, VfioRegionSparseMmapArea,
+    DmaLoggingRange, PrecopyInfo, VfioContainer, VfioDevice, VfioDeviceFd, VfioGroup, VfioIrq,
+    VfioOps, VfioRegion, VfioRegionInfoCap, VfioRegionInfoCapNvlink2Lnkspd,
+    VfioRegionInfoCapNvlink2Ssatgt, VfioRegionInfoCapSparseMmap, VfioRegionInfoCapType,
+    VfioRegionSparseMmapArea,
 };
 
 #[cfg(feature = "vfio_cdev")]
@@ -175,6 +176,12 @@ pub enum VfioError {
     NoMigrationDataFd,
     #[error("VFIO migration data I/O failed: {0}")]
     VfioMigrationDataIo(#[source] io::Error),
+    #[error("VFIO DMA logging is not currently started")]
+    DmaLoggingNotStarted,
+    #[error("VFIO DMA logging is already started")]
+    DmaLoggingAlreadyStarted,
+    #[error("invalid argument for VFIO DMA logging: {0}")]
+    DmaLoggingInvalidArgument(&'static str),
 }
 
 /// Specialized version of `Result` for VFIO subsystem.

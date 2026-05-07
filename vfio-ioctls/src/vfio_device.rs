@@ -1183,6 +1183,7 @@ pub struct VfioDevice {
     pub(crate) sysfspath: Option<PathBuf>,
     pub(crate) vfio_ops: Arc<dyn VfioOps>,
     pub(crate) migration_data_fd: Mutex<Option<File>>,
+    pub(crate) dma_logging_started: Mutex<bool>,
 }
 
 /// Remaining migration data reported by the kernel during precopy.
@@ -1192,6 +1193,15 @@ pub struct PrecopyInfo {
     pub initial_bytes: u64,
     /// Bytes of dirty state that have accumulated since precopy started.
     pub dirty_bytes: u64,
+}
+
+/// IOVA range tracked or reported by VFIO DMA logging.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DmaLoggingRange {
+    /// Starting IOVA of the range.
+    pub iova: u64,
+    /// Length of the range in bytes.
+    pub length: u64,
 }
 
 impl VfioDevice {
@@ -1299,6 +1309,7 @@ impl VfioDevice {
             sysfspath: Some(sysfspath.to_path_buf()),
             vfio_ops,
             migration_data_fd: Mutex::new(None),
+            dma_logging_started: Mutex::new(false),
         })
     }
 
@@ -1335,6 +1346,7 @@ impl VfioDevice {
             sysfspath: None,
             vfio_ops,
             migration_data_fd: Mutex::new(None),
+            dma_logging_started: Mutex::new(false),
         })
     }
 
@@ -1829,6 +1841,152 @@ impl VfioDevice {
         let fd = guard.as_mut().ok_or(VfioError::NoMigrationDataFd)?;
         fd.write_all(data).map_err(VfioError::VfioMigrationDataIo)
     }
+
+    /// Start DMA dirty page logging for the given IOVA ranges.
+    ///
+    /// `page_size` is the requested granularity in bytes of the dirty
+    /// bitmap. The device may negotiate a different page size. The
+    /// returned value is the granularity the device actually applied and
+    /// is the recommended value to pass to subsequent
+    /// `report_dma_logging` calls. `ranges` is the list of IOVA ranges
+    /// to track.
+    ///
+    /// The kernel allows only one active logging session per device.
+    /// Returns `VfioError::DmaLoggingAlreadyStarted` if logging is
+    /// already active.
+    pub fn start_dma_logging(&self, page_size: u64, ranges: &[DmaLoggingRange]) -> Result<u64> {
+        if ranges.is_empty() {
+            return Err(VfioError::DmaLoggingInvalidArgument(
+                "ranges must not be empty",
+            ));
+        }
+        let num_ranges = u32::try_from(ranges.len())
+            .map_err(|_| VfioError::DmaLoggingInvalidArgument("too many ranges"))?;
+
+        let mut started = self.dma_logging_started.lock().unwrap();
+        if *started {
+            return Err(VfioError::DmaLoggingAlreadyStarted);
+        }
+
+        let kernel_ranges: Vec<vfio_device_feature_dma_logging_range> = ranges
+            .iter()
+            .map(|r| vfio_device_feature_dma_logging_range {
+                iova: r.iova,
+                length: r.length,
+            })
+            .collect();
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_dma_logging_control>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_dma_logging_control>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_SET | VFIO_DEVICE_FEATURE_DMA_LOGGING_START;
+        {
+            // SAFETY: vec_with_array_field reserved size_of::<vfio_device_feature_dma_logging_control>()
+            // bytes immediately after the header.
+            let payload = unsafe {
+                &mut *(feature_buf[0].data.as_mut_ptr()
+                    as *mut vfio_device_feature_dma_logging_control)
+            };
+            payload.page_size = page_size;
+            payload.num_ranges = num_ranges;
+            payload.__reserved = 0;
+            payload.ranges = kernel_ranges.as_ptr() as u64;
+        }
+        // kernel_ranges must outlive the syscall. It is owned by this stack
+        // frame and dropped after device_feature returns.
+        vfio_syscall::device_feature(self, &mut feature_buf[0])?;
+
+        // The kernel may overwrite page_size with the granularity it
+        // actually picked. Read it back so the caller knows the bitmap
+        // page size to use in subsequent report calls.
+        // SAFETY: the same payload was initialised above and the buffer
+        // outlives this read.
+        let negotiated_page_size = unsafe {
+            (*(feature_buf[0].data.as_ptr() as *const vfio_device_feature_dma_logging_control))
+                .page_size
+        };
+        *started = true;
+        Ok(negotiated_page_size)
+    }
+
+    /// Stop DMA dirty page logging.
+    ///
+    /// Returns `VfioError::DmaLoggingNotStarted` if logging was not
+    /// previously started by `start_dma_logging`.
+    pub fn stop_dma_logging(&self) -> Result<()> {
+        let mut started = self.dma_logging_started.lock().unwrap();
+        if !*started {
+            return Err(VfioError::DmaLoggingNotStarted);
+        }
+        let mut feature_buf = vec_with_array_field::<vfio_device_feature, ()>(1);
+        feature_buf[0].argsz = mem::size_of::<vfio_device_feature>() as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_SET | VFIO_DEVICE_FEATURE_DMA_LOGGING_STOP;
+        vfio_syscall::device_feature(self, &mut feature_buf[0])?;
+        *started = false;
+        Ok(())
+    }
+
+    /// Report dirty pages for an IOVA range.
+    ///
+    /// The returned Vec is a packed dirty bitmap, one bit per page.
+    /// Page `i` starts at IOVA `range.iova + i * page_size`. The page
+    /// is dirty when `(bitmap[i / 64] >> (i % 64)) & 1 == 1`. The Vec
+    /// has `ceil(range.length / page_size / 64)` entries.
+    ///
+    /// Passing the value returned by `start_dma_logging` is recommended.
+    /// Smaller values are accepted but force the driver to replicate
+    /// dirty bits and inflate the bitmap.
+    ///
+    /// On error the returned bitmap is corrupt. Recovery is to either
+    /// treat every tracked page as dirty and start a fresh logging
+    /// session via `stop_dma_logging` then `start_dma_logging`, or to
+    /// abort the migration.
+    ///
+    /// Returns `DmaLoggingNotStarted` if logging is not active.
+    pub fn report_dma_logging(&self, range: DmaLoggingRange, page_size: u64) -> Result<Vec<u64>> {
+        if page_size == 0 {
+            return Err(VfioError::DmaLoggingInvalidArgument(
+                "page_size must be non-zero",
+            ));
+        }
+        if range.length == 0 {
+            return Err(VfioError::DmaLoggingInvalidArgument(
+                "range.length must be non-zero",
+            ));
+        }
+        let started = self.dma_logging_started.lock().unwrap();
+        if !*started {
+            return Err(VfioError::DmaLoggingNotStarted);
+        }
+
+        let num_pages = range.length.div_ceil(page_size);
+        let num_u64s = num_pages.div_ceil(u64::BITS as u64) as usize;
+        let mut bitmap = vec![0u64; num_u64s];
+
+        let mut feature_buf =
+            vec_with_array_field::<vfio_device_feature, vfio_device_feature_dma_logging_report>(1);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>()
+            + mem::size_of::<vfio_device_feature_dma_logging_report>())
+            as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_GET | VFIO_DEVICE_FEATURE_DMA_LOGGING_REPORT;
+        {
+            // SAFETY: vec_with_array_field reserved size_of::<vfio_device_feature_dma_logging_report>()
+            // bytes immediately after the header.
+            let payload = unsafe {
+                &mut *(feature_buf[0].data.as_mut_ptr()
+                    as *mut vfio_device_feature_dma_logging_report)
+            };
+            payload.iova = range.iova;
+            payload.length = range.length;
+            payload.page_size = page_size;
+            payload.bitmap = bitmap.as_mut_ptr() as u64;
+        }
+        // bitmap must outlive the syscall. It is owned by this stack frame
+        // and returned to the caller after device_feature returns.
+        vfio_syscall::device_feature(self, &mut feature_buf[0])?;
+        Ok(bitmap)
+    }
 }
 
 impl AsRawFd for VfioDevice {
@@ -2006,6 +2164,7 @@ mod tests {
             sysfspath: Some(path.to_path_buf()),
             vfio_ops: Arc::new(create_vfio_container()),
             migration_data_fd: Mutex::new(None),
+            dma_logging_started: Mutex::new(false),
         }
     }
 
@@ -2103,6 +2262,199 @@ mod tests {
             device.write_migration_data(b""),
             Err(VfioError::NoMigrationDataFd)
         ));
+    }
+
+    #[test]
+    fn test_start_dma_logging() {
+        let device = create_vfio_device();
+        let ranges = [DmaLoggingRange {
+            iova: 0x0,
+            length: 0x100000,
+        }];
+        // The mock syscall leaves page_size as supplied, so the returned
+        // granularity should match the input.
+        let negotiated = device.start_dma_logging(0x1000, &ranges).unwrap();
+        assert_eq!(negotiated, 0x1000);
+    }
+
+    #[test]
+    fn test_start_dma_logging_already_started() {
+        let device = create_vfio_device();
+        let ranges = [DmaLoggingRange {
+            iova: 0x0,
+            length: 0x100000,
+        }];
+        device.start_dma_logging(0x1000, &ranges).unwrap();
+        assert!(matches!(
+            device.start_dma_logging(0x1000, &ranges),
+            Err(VfioError::DmaLoggingAlreadyStarted)
+        ));
+    }
+
+    #[test]
+    fn test_start_dma_logging_empty_ranges() {
+        let device = create_vfio_device();
+        assert!(matches!(
+            device.start_dma_logging(0x1000, &[]),
+            Err(VfioError::DmaLoggingInvalidArgument(_))
+        ));
+    }
+
+    #[test]
+    fn test_stop_dma_logging() {
+        let device = create_vfio_device();
+        let ranges = [DmaLoggingRange {
+            iova: 0x0,
+            length: 0x100000,
+        }];
+        device.start_dma_logging(0x1000, &ranges).unwrap();
+        device.stop_dma_logging().unwrap();
+    }
+
+    #[test]
+    fn test_stop_dma_logging_not_started() {
+        let device = create_vfio_device();
+        assert!(matches!(
+            device.stop_dma_logging(),
+            Err(VfioError::DmaLoggingNotStarted)
+        ));
+    }
+
+    #[test]
+    fn test_report_dma_logging() {
+        let device = create_vfio_device();
+        let ranges = [DmaLoggingRange {
+            iova: 0x0,
+            length: 0x100000,
+        }];
+        device.start_dma_logging(0x1000, &ranges).unwrap();
+        // 0x100000 bytes / 0x1000 page size = 256 pages, 4 u64 entries.
+        let range = DmaLoggingRange {
+            iova: 0x0,
+            length: 0x100000,
+        };
+        let bitmap = device.report_dma_logging(range, 0x1000).unwrap();
+        assert_eq!(bitmap.len(), 4);
+        // The test syscall writes u64::MAX into the first entry to signal
+        // the ioctl path was actually taken.
+        assert_eq!(bitmap[0], u64::MAX);
+    }
+
+    #[test]
+    fn test_report_dma_logging_bitmap_size() {
+        let device = create_vfio_device();
+        let ranges = [DmaLoggingRange {
+            iova: 0x0,
+            length: 0x1000 * 65,
+        }];
+        device.start_dma_logging(0x1000, &ranges).unwrap();
+
+        // Single page must round up to one u64.
+        let range = DmaLoggingRange {
+            iova: 0x0,
+            length: 0x1000,
+        };
+        let bitmap = device.report_dma_logging(range, 0x1000).unwrap();
+        assert_eq!(bitmap.len(), 1);
+
+        // 65 pages must round up to two u64 entries (64-bit aligned).
+        let range = DmaLoggingRange {
+            iova: 0x0,
+            length: 0x1000 * 65,
+        };
+        let bitmap = device.report_dma_logging(range, 0x1000).unwrap();
+        assert_eq!(bitmap.len(), 2);
+    }
+
+    #[test]
+    fn test_report_dma_logging_not_started() {
+        let device = create_vfio_device();
+        let range = DmaLoggingRange {
+            iova: 0x0,
+            length: 0x1000,
+        };
+        assert!(matches!(
+            device.report_dma_logging(range, 0x1000),
+            Err(VfioError::DmaLoggingNotStarted)
+        ));
+    }
+
+    #[test]
+    fn test_report_dma_logging_invalid_args() {
+        let device = create_vfio_device();
+        let ranges = [DmaLoggingRange {
+            iova: 0x0,
+            length: 0x1000,
+        }];
+        device.start_dma_logging(0x1000, &ranges).unwrap();
+
+        let range = DmaLoggingRange {
+            iova: 0x0,
+            length: 0x1000,
+        };
+        assert!(matches!(
+            device.report_dma_logging(range, 0),
+            Err(VfioError::DmaLoggingInvalidArgument(_))
+        ));
+
+        let range = DmaLoggingRange {
+            iova: 0x0,
+            length: 0,
+        };
+        assert!(matches!(
+            device.report_dma_logging(range, 0x1000),
+            Err(VfioError::DmaLoggingInvalidArgument(_))
+        ));
+    }
+
+    #[test]
+    fn test_dma_logging_ordering() {
+        let device = create_vfio_device();
+        let ranges = [DmaLoggingRange {
+            iova: 0x0,
+            length: 0x100000,
+        }];
+        let range = DmaLoggingRange {
+            iova: 0x0,
+            length: 0x100000,
+        };
+
+        // Logging starts inactive, so stop and report must fail.
+        assert!(matches!(
+            device.stop_dma_logging(),
+            Err(VfioError::DmaLoggingNotStarted)
+        ));
+        assert!(matches!(
+            device.report_dma_logging(range, 0x1000),
+            Err(VfioError::DmaLoggingNotStarted)
+        ));
+
+        // First start succeeds.
+        device.start_dma_logging(0x1000, &ranges).unwrap();
+
+        // Starting again while active is rejected.
+        assert!(matches!(
+            device.start_dma_logging(0x1000, &ranges),
+            Err(VfioError::DmaLoggingAlreadyStarted)
+        ));
+
+        // Report and stop both work in the active state.
+        device.report_dma_logging(range, 0x1000).unwrap();
+        device.stop_dma_logging().unwrap();
+
+        // After stop, state is back to inactive.
+        assert!(matches!(
+            device.stop_dma_logging(),
+            Err(VfioError::DmaLoggingNotStarted)
+        ));
+        assert!(matches!(
+            device.report_dma_logging(range, 0x1000),
+            Err(VfioError::DmaLoggingNotStarted)
+        ));
+
+        // A fresh start is permitted once the previous session has stopped.
+        device.start_dma_logging(0x1000, &ranges).unwrap();
+        device.stop_dma_logging().unwrap();
     }
 
     #[test]

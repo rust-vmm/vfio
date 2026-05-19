@@ -18,11 +18,11 @@ impl<T> __IncompleteArrayField<T> {
     }
     #[inline]
     pub unsafe fn as_slice(&self, len: usize) -> &[T] {
-        ::std::slice::from_raw_parts(self.as_ptr(), len)
+        unsafe { ::std::slice::from_raw_parts(self.as_ptr(), len) }
     }
     #[inline]
     pub unsafe fn as_mut_slice(&mut self, len: usize) -> &mut [T] {
-        ::std::slice::from_raw_parts_mut(self.as_mut_ptr(), len)
+        unsafe { ::std::slice::from_raw_parts_mut(self.as_mut_ptr(), len) }
     }
 }
 impl<T> ::std::fmt::Debug for __IncompleteArrayField<T> {
@@ -658,7 +658,11 @@ impl Default for vfio_pci_dependent_device {
 }
 impl ::std::fmt::Debug for vfio_pci_dependent_device {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        write ! (f , "vfio_pci_dependent_device {{ __bindgen_anon_1: {:?}, segment: {:?}, bus: {:?}, devfn: {:?} }}" , self . __bindgen_anon_1 , self . segment , self . bus , self . devfn)
+        write!(
+            f,
+            "vfio_pci_dependent_device {{ __bindgen_anon_1: {:?}, segment: {:?}, bus: {:?}, devfn: {:?} }}",
+            self.__bindgen_anon_1, self.segment, self.bus, self.devfn
+        )
     }
 }
 #[repr(C)]
@@ -814,7 +818,24 @@ impl Default for vfio_device_gfx_plane_info {
 }
 impl ::std::fmt::Debug for vfio_device_gfx_plane_info {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        write ! (f , "vfio_device_gfx_plane_info {{ argsz: {:?}, flags: {:?}, drm_plane_type: {:?}, drm_format: {:?}, drm_format_mod: {:?}, width: {:?}, height: {:?}, stride: {:?}, size: {:?}, x_pos: {:?}, y_pos: {:?}, x_hot: {:?}, y_hot: {:?}, __bindgen_anon_1: {:?} }}" , self . argsz , self . flags , self . drm_plane_type , self . drm_format , self . drm_format_mod , self . width , self . height , self . stride , self . size , self . x_pos , self . y_pos , self . x_hot , self . y_hot , self . __bindgen_anon_1)
+        write!(
+            f,
+            "vfio_device_gfx_plane_info {{ argsz: {:?}, flags: {:?}, drm_plane_type: {:?}, drm_format: {:?}, drm_format_mod: {:?}, width: {:?}, height: {:?}, stride: {:?}, size: {:?}, x_pos: {:?}, y_pos: {:?}, x_hot: {:?}, y_hot: {:?}, __bindgen_anon_1: {:?} }}",
+            self.argsz,
+            self.flags,
+            self.drm_plane_type,
+            self.drm_format,
+            self.drm_format_mod,
+            self.width,
+            self.height,
+            self.stride,
+            self.size,
+            self.x_pos,
+            self.y_pos,
+            self.x_hot,
+            self.y_hot,
+            self.__bindgen_anon_1
+        )
     }
 }
 #[repr(C)]

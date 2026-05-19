@@ -9,7 +9,7 @@ license = "Apache-2.0 OR BSD-3-Clause"
 description = "Safe wrappers over VFIO ioctls"
 repository = "https://github.com/rust-vmm/vfio"
 readme = "README.md"
-edition = "2018"
+edition = "2024"
 keywords = ["vfio"]
 
 [package.metadata.docs.rs]

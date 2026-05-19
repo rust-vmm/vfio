@@ -17,7 +17,7 @@ use log::error;
 use vfio_bindings::bindings::vfio::*;
 use vmm_sys_util::errno::Error as SysError;
 
-use crate::vfio_device::{vfio_region_info_with_cap, VfioDeviceInfo};
+use crate::vfio_device::{VfioDeviceInfo, vfio_region_info_with_cap};
 use crate::{Result, VfioContainer, VfioDevice, VfioError, VfioGroup};
 
 ioctl_io_nr!(VFIO_GET_API_VERSION, VFIO_TYPE.into(), VFIO_BASE);
@@ -357,7 +357,7 @@ pub(crate) mod vfio_syscall {
 #[cfg(test)]
 pub(crate) mod vfio_syscall {
     use super::*;
-    use vfio_bindings::bindings::vfio::{vfio_device_info, VFIO_IRQ_INFO_EVENTFD};
+    use vfio_bindings::bindings::vfio::{VFIO_IRQ_INFO_EVENTFD, vfio_device_info};
     use vmm_sys_util::tempfile::TempFile;
 
     pub(crate) fn check_api_version(_container: &VfioContainer) -> i32 {
@@ -492,7 +492,7 @@ pub(crate) mod vfio_syscall {
             idx if idx == VFIO_PCI_VGA_REGION_INDEX => {
                 return Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(
                     libc::EINVAL,
-                )))
+                )));
             }
             idx if (2..VFIO_PCI_NUM_REGIONS).contains(&idx) => {
                 reg_info.flags = 0;
@@ -502,7 +502,7 @@ pub(crate) mod vfio_syscall {
             idx if idx == VFIO_PCI_NUM_REGIONS => {
                 return Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(
                     libc::EINVAL,
-                )))
+                )));
             }
             _ => panic!("invalid device region index"),
         }
@@ -588,7 +588,7 @@ pub(crate) mod vfio_syscall {
             3 => {
                 return Err(VfioError::VfioDeviceGetRegionInfo(SysError::new(
                     libc::EINVAL,
-                )))
+                )));
             }
             _ => panic!("invalid device irq index"),
         }

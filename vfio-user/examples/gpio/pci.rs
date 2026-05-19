@@ -359,7 +359,7 @@ impl PciConfiguration {
             PciHeaderType::Bridge => {
                 registers[3] = 0x0001_0000; // Header type 1 (bridge)
                 writable_bits[6] = 0x00ff_ffff; // Primary/secondary/subordinate bus number,
-                                                // secondary latency timer
+                // secondary latency timer
                 registers[7] = 0x0000_00f0; // IO base > IO Limit, no IO address on secondary side at initialize
                 writable_bits[7] = 0xf900_0000; // IO base and limit, secondary status,
                 registers[8] = 0x0000_fff0; // mem base > mem Limit, no MMIO address on secondary side at initialize
@@ -566,8 +566,9 @@ impl PciConfiguration {
     pub fn get_bar_configuration(&self, bar_num: usize) -> Option<PciBarConfiguration> {
         let config = self.bar_configs.get(bar_num)?;
 
-        if let Some(mut config) = config {
+        if let Some(config) = config {
             let command = self.read_reg(COMMAND_REG);
+            let mut config = config.clone();
             if (config.is_memory() && (command & COMMAND_REG_MEMORY_SPACE_MASK == 0))
                 || (config.is_io() && (command & COMMAND_REG_IO_SPACE_MASK == 0))
             {

@@ -4,8 +4,11 @@
 //
 
 use bitflags::bitflags;
-use libc::{c_void, iovec, EINVAL};
-use libc::{sysconf, _SC_PAGESIZE};
+use libc::{_SC_PAGESIZE, sysconf};
+use libc::{EINVAL, c_void, iovec};
+use log::*;
+use serde::Deserialize;
+use serde::Serialize;
 use std::ffi::CString;
 use std::fs::File;
 use std::io::{IoSlice, Read, Write};
@@ -20,12 +23,6 @@ use thiserror::Error;
 use vfio_bindings::bindings::vfio::*;
 use vm_memory::{ByteValued, FileOffset};
 use vmm_sys_util::sock_ctrl_msg::ScmSocket;
-
-#[macro_use]
-extern crate serde_derive;
-
-#[macro_use]
-extern crate log;
 
 #[allow(dead_code)]
 #[repr(u16)]
@@ -651,8 +648,10 @@ impl Client {
 
                     let area_num = sparse_mmap.nr_areas;
                     if cap_offset + mmap_cap_size + area_num * mmap_area_size > cap_size {
-                        warn!("Unexpected end of cap data: 'cap_offset + mmap_cap_size + area_num * mmap_area_size > cap_size' \
-                        cap_offset = {cap_offset}, mmap_cap_size = {mmap_area_size}, area_num = {area_num}, mmap_area_size = {mmap_area_size}, cap_size = {cap_size}");
+                        warn!(
+                            "Unexpected end of cap data: 'cap_offset + mmap_cap_size + area_num * mmap_area_size > cap_size' \
+                        cap_offset = {cap_offset}, mmap_cap_size = {mmap_area_size}, area_num = {area_num}, mmap_area_size = {mmap_area_size}, cap_size = {cap_size}"
+                        );
                         break;
                     }
                     let areas =
@@ -904,9 +903,9 @@ impl Server {
         })
     }
 
-    fn handle_command(
+    fn handle_command<B: ServerBackend>(
         &self,
-        backend: &mut dyn ServerBackend,
+        backend: &mut B,
         stream: &mut UnixStream,
         header: Header,
         fds: Vec<File>,
@@ -1372,7 +1371,7 @@ impl Server {
         Ok(())
     }
 
-    pub fn run(&self, backend: &mut dyn ServerBackend) -> Result<(), Error> {
+    pub fn run<B: ServerBackend>(&self, backend: &mut B) -> Result<(), Error> {
         let (mut stream, _) = self.listener.accept().map_err(Error::SocketAccept)?;
 
         loop {

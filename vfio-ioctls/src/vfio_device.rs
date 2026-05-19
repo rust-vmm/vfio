@@ -30,13 +30,13 @@ use crate::vfio_ioctls::*;
 use crate::{Result, VfioError};
 #[cfg(all(feature = "kvm", not(test)))]
 use kvm_bindings::{
-    kvm_device_attr, KVM_DEV_VFIO_FILE, KVM_DEV_VFIO_FILE_ADD, KVM_DEV_VFIO_FILE_DEL,
+    KVM_DEV_VFIO_FILE, KVM_DEV_VFIO_FILE_ADD, KVM_DEV_VFIO_FILE_DEL, kvm_device_attr,
 };
 #[cfg(all(feature = "kvm", not(test)))]
 use kvm_ioctls::DeviceFd as KvmDeviceFd;
 #[cfg(all(feature = "mshv", not(test)))]
 use mshv_bindings::{
-    mshv_device_attr, MSHV_DEV_VFIO_FILE, MSHV_DEV_VFIO_FILE_ADD, MSHV_DEV_VFIO_FILE_DEL,
+    MSHV_DEV_VFIO_FILE, MSHV_DEV_VFIO_FILE_ADD, MSHV_DEV_VFIO_FILE_DEL, mshv_device_attr,
 };
 #[cfg(all(feature = "mshv", not(test)))]
 use mshv_ioctls::DeviceFd as MshvDeviceFd;
@@ -343,11 +343,11 @@ impl VfioContainer {
         vfio_syscall::set_group_container(&group, self)?;
 
         // Initialize the IOMMU backend driver after binding the first group object.
-        if hash.is_empty() {
-            if let Err(e) = self.set_iommu(VFIO_TYPE1v2_IOMMU) {
-                let _ = vfio_syscall::unset_group_container(&group, self);
-                return Err(e);
-            }
+        if hash.is_empty()
+            && let Err(e) = self.set_iommu(VFIO_TYPE1v2_IOMMU)
+        {
+            let _ = vfio_syscall::unset_group_container(&group, self);
+            return Err(e);
         }
 
         // Add the new group object to the hypervisor driver.
@@ -594,7 +594,7 @@ impl VfioOps for VfioContainer {
     /// concurrent read and write access to the memory via DMA.  Therefore, the
     /// memory may be read or written by the device at any time without synchronization.
     unsafe fn vfio_dma_map(&self, iova: u64, size: usize, user_addr: *mut u8) -> Result<()> {
-        self.vfio_dma_map(iova, size, user_addr)
+        unsafe { self.vfio_dma_map(iova, size, user_addr) }
     }
 
     /// Unmap a region of user space memory (e.g. guest memory) from an IO
@@ -1666,10 +1666,10 @@ impl VfioDevice {
         ];
 
         for index in irq_indexes {
-            if let Some(irq_info) = self.irqs.get(&index) {
-                if irq_info.count > max_interrupts {
-                    max_interrupts = irq_info.count;
-                }
+            if let Some(irq_info) = self.irqs.get(&index)
+                && irq_info.count > max_interrupts
+            {
+                max_interrupts = irq_info.count;
             }
         }
 

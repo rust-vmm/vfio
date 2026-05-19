@@ -8,10 +8,10 @@ use log::info;
 use pci::{PciBarConfiguration, PciSubclass};
 use std::{fs::File, io::Write, mem::size_of, num::Wrapping, path::PathBuf};
 use vfio_bindings::bindings::vfio::{
-    vfio_region_info, VFIO_IRQ_INFO_EVENTFD, VFIO_IRQ_SET_ACTION_TRIGGER,
-    VFIO_IRQ_SET_DATA_EVENTFD, VFIO_PCI_BAR2_REGION_INDEX, VFIO_PCI_CONFIG_REGION_INDEX,
-    VFIO_PCI_INTX_IRQ_INDEX, VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS, VFIO_REGION_INFO_FLAG_READ,
-    VFIO_REGION_INFO_FLAG_WRITE,
+    VFIO_IRQ_INFO_EVENTFD, VFIO_IRQ_SET_ACTION_TRIGGER, VFIO_IRQ_SET_DATA_EVENTFD,
+    VFIO_PCI_BAR2_REGION_INDEX, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_INTX_IRQ_INDEX,
+    VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS, VFIO_REGION_INFO_FLAG_READ,
+    VFIO_REGION_INFO_FLAG_WRITE, vfio_region_info,
 };
 use vfio_user::{IrqInfo, Server, ServerBackend, ServerRegion};
 
@@ -150,7 +150,9 @@ impl ServerBackend for TestBackend {
         size: u64,
         fd: Option<File>,
     ) -> Result<(), std::io::Error> {
-        info!("dma_map flags = {flags:?} offset = {offset} address = {address} size = {size} fd = {fd:?}");
+        info!(
+            "dma_map flags = {flags:?} offset = {offset} address = {address} size = {size} fd = {fd:?}"
+        );
         Ok(())
     }
 
@@ -177,7 +179,9 @@ impl ServerBackend for TestBackend {
         count: u32,
         fds: Vec<File>,
     ) -> Result<(), std::io::Error> {
-        info!("set_irqs index = {index} flags = {flags} start = {start} count = {count} fds = {fds:?}");
+        info!(
+            "set_irqs index = {index} flags = {flags} start = {start} count = {count} fds = {fds:?}"
+        );
         if flags & (VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER) > 0 {
             if count == 1 {
                 self.irq = Some(fds[0].try_clone().unwrap());

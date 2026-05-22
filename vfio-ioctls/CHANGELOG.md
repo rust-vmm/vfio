@@ -3,6 +3,14 @@
 ## Changed
 
 ## Added
+
+## Fixed
+
+# [v0.6.1]
+
+## Changed
+
+## Added
 - [[148]](https://github.com/rust-vmm/vfio/pull/148) Add `VfioDevice::new_from_fd` to construct a `VfioDevice` from
   a pre-opened vfio device file (cdev mode only).
 

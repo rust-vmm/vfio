@@ -46,8 +46,45 @@ pub enum Command {
     DmaRead = 11,
     DmaWrite = 12,
     DeviceReset = 13,
-    UserDirtyPages = 14,
+    UserDirtyPages = 14, // legacy v1 dirty pages (unsupported; superseded by DeviceFeature DMA logging)
+    // Migration v2 (the kernel VFIO device-feature uAPI mirrored over the vfio-user wire).
+    DeviceFeature = 16, // MIG_DEVICE_STATE get/set + DMA_LOGGING_START/STOP/REPORT
+    MigDataRead = 17,   // read serialized device state (STOP_COPY / PRE_COPY)
+    MigDataWrite = 18,  // write serialized device state (RESUMING)
 }
+
+// vfio-user migration-v2 wire constants. The eight device-state values are absent from vfio-bindings
+// (kernel ioctl bindings), so they are defined here; the capability flags are u64 to match the
+// `vfio_user_device_feature_migration.flags` wire field. Values match libvfio-user include/vfio-user.h.
+/// Device migration states (the v2 FSM), shared by backends and clients.
+pub const VFIO_DEVICE_STATE_ERROR: u32 = 0;
+pub const VFIO_DEVICE_STATE_STOP: u32 = 1;
+pub const VFIO_DEVICE_STATE_RUNNING: u32 = 2;
+pub const VFIO_DEVICE_STATE_STOP_COPY: u32 = 3;
+pub const VFIO_DEVICE_STATE_RESUMING: u32 = 4;
+pub const VFIO_DEVICE_STATE_RUNNING_P2P: u32 = 5;
+pub const VFIO_DEVICE_STATE_PRE_COPY: u32 = 6;
+pub const VFIO_DEVICE_STATE_PRE_COPY_P2P: u32 = 7;
+/// DeviceFeature flag bits.
+pub const VFIO_DEVICE_FEATURE_GET: u32 = 1 << 16;
+pub const VFIO_DEVICE_FEATURE_SET: u32 = 1 << 17;
+pub const VFIO_DEVICE_FEATURE_PROBE: u32 = 1 << 18;
+pub const VFIO_DEVICE_FEATURE_MASK: u32 = 0xffff;
+/// DeviceFeature feature indices.
+pub const VFIO_DEVICE_FEATURE_MIGRATION: u32 = 1;
+pub const VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE: u32 = 2;
+pub const VFIO_DEVICE_FEATURE_DMA_LOGGING_START: u32 = 6;
+pub const VFIO_DEVICE_FEATURE_DMA_LOGGING_STOP: u32 = 7;
+pub const VFIO_DEVICE_FEATURE_DMA_LOGGING_REPORT: u32 = 8;
+/// VFIO_DEVICE_FEATURE_MIGRATION capability flags (which states a device supports).
+pub const VFIO_MIGRATION_STOP_COPY: u64 = 1 << 0;
+pub const VFIO_MIGRATION_P2P: u64 = 1 << 1;
+pub const VFIO_MIGRATION_PRE_COPY: u64 = 1 << 2;
+
+// Upper bounds on wire-controlled allocations in the migration dispatch (a client controls these
+// sizes). The server rejects anything larger with InvalidInput rather than allocating it.
+const MAX_MIG_DATA_SIZE: usize = 8 << 20; // bytes per MIG_DATA chunk
+const MAX_DMA_LOG_BITMAP: usize = 64 << 20; // dirty-bitmap bytes per report (~8 TiB at 4 KiB pages)
 
 #[allow(dead_code)]
 #[repr(u32)]
@@ -223,6 +260,75 @@ unsafe impl ByteValued for SetIrqs {}
 // SAFETY: data structure only contain a series of integers
 unsafe impl ByteValued for DeviceReset {}
 
+// Migration v2 wire payloads (after the 16-byte Header). Layouts match libvfio-user
+// include/vfio-user.h byte-for-byte.
+/// `struct vfio_user_device_feature { u32 argsz; u32 flags; u8 data[] }` (data follows on the wire).
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct DeviceFeatureHdr {
+    header: Header,
+    argsz: u32, // size of (this feature struct without `header`) + trailing data
+    flags: u32, // feature index (low 16) | GET/SET/PROBE
+}
+/// `struct vfio_user_device_feature_migration { u64 flags }`.
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct FeatureMigration {
+    flags: u64,
+}
+/// `struct vfio_user_device_feature_mig_state { u32 device_state; u32 data_fd }` (data_fd unused on vfio-user).
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct FeatureMigState {
+    device_state: u32,
+    data_fd: u32,
+}
+/// `struct vfio_user_device_feature_dma_logging_control { u64 page_size; u32 num_ranges; u32 reserved }`.
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct DmaLoggingControl {
+    page_size: u64,
+    num_ranges: u32,
+    reserved: u32,
+}
+/// `struct vfio_user_device_feature_dma_logging_range { u64 iova; u64 length }`.
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct DmaLoggingRange {
+    iova: u64,
+    length: u64,
+}
+/// `struct vfio_user_device_feature_dma_logging_report { u64 iova; u64 length; u64 page_size; u8 bitmap[] }`.
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct DmaLoggingReport {
+    iova: u64,
+    length: u64,
+    page_size: u64,
+}
+/// `struct vfio_user_mig_data { u32 argsz; u32 size; u8 data[] }`.
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct MigData {
+    header: Header,
+    argsz: u32,
+    size: u32,
+}
+// SAFETY: data structure only contain a series of integers
+unsafe impl ByteValued for DeviceFeatureHdr {}
+// SAFETY: data structure only contain a series of integers
+unsafe impl ByteValued for FeatureMigration {}
+// SAFETY: data structure only contain a series of integers
+unsafe impl ByteValued for FeatureMigState {}
+// SAFETY: data structure only contain a series of integers
+unsafe impl ByteValued for DmaLoggingControl {}
+// SAFETY: data structure only contain a series of integers
+unsafe impl ByteValued for DmaLoggingRange {}
+// SAFETY: data structure only contain a series of integers
+unsafe impl ByteValued for DmaLoggingReport {}
+// SAFETY: data structure only contain a series of integers
+unsafe impl ByteValued for MigData {}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct Capabilities {
     #[serde(default = "default_max_msg_fds")]
@@ -306,6 +412,8 @@ pub enum Error {
     UnsupportedFeature,
     #[error("Error from backend: {0:?}")]
     Backend(#[source] std::io::Error),
+    #[error("Remote returned error {0}")]
+    RemoteError(u32),
     #[error("Invalid input")]
     InvalidInput,
     #[error("No_reply bit unexpectedly set for command: {0:?}")]
@@ -455,6 +563,235 @@ impl Client {
             .map_err(Error::StreamRead)?;
         debug!("Reply: {reply:?}");
 
+        Ok(())
+    }
+
+    // Migration v2 client API (drives the device-state FSM + DMA logging over the socket).
+    /// Send a VFIO_USER_DEVICE_FEATURE command and return the reply's feature payload. `out_len` is
+    /// the expected reply payload size (for a GET): `argsz` is sized to cover it, since a conforming
+    /// peer rejects the request if `argsz` is smaller than the reply it would send.
+    fn device_feature(
+        &mut self,
+        flags: u32,
+        data: &[u8],
+        out_len: usize,
+    ) -> Result<Vec<u8>, Error> {
+        let body = size_of::<DeviceFeatureHdr>() - size_of::<Header>();
+        let cmd = DeviceFeatureHdr {
+            header: Header {
+                message_id: self.next_message_id.0,
+                command: Command::DeviceFeature as u16,
+                flags: HeaderFlags::Command as u32,
+                message_size: (size_of::<DeviceFeatureHdr>() + data.len()) as u32,
+                ..Default::default()
+            },
+            argsz: (body + data.len().max(out_len)) as u32,
+            flags,
+        };
+        self.next_message_id += Wrapping(1);
+        // Send header and payload as one write: libvfio-user's server reads a request body with a
+        // single recv() and rejects a partial read, so it must arrive as one contiguous chunk.
+        let mut req = cmd.as_slice().to_vec();
+        req.extend_from_slice(data);
+        self.stream.write_all(&req).map_err(Error::StreamWrite)?;
+        // Read the header first: an error reply is header-only, so it must not be parsed as a body.
+        let mut hdr = Header::default();
+        self.stream
+            .read_exact(hdr.as_mut_slice())
+            .map_err(Error::StreamRead)?;
+        let rest = (hdr.message_size as usize).saturating_sub(size_of::<Header>());
+        let mut rest_buf = vec![0u8; rest];
+        self.stream
+            .read_exact(&mut rest_buf)
+            .map_err(Error::StreamRead)?;
+        if hdr.flags & HeaderFlags::Error as u32 != 0 || hdr.error != 0 {
+            return Err(Error::RemoteError(hdr.error));
+        }
+        // rest_buf = [argsz u32][flags u32][payload]; strip the device-feature header.
+        Ok(rest_buf.get(body..).unwrap_or(&[]).to_vec())
+    }
+
+    /// Query supported migration flags (VFIO_MIGRATION_*); a backend that isn't migratable errors.
+    pub fn query_migration(&mut self) -> Result<u64, Error> {
+        let p = self.device_feature(
+            VFIO_DEVICE_FEATURE_MIGRATION | VFIO_DEVICE_FEATURE_GET,
+            &[],
+            size_of::<FeatureMigration>(),
+        )?;
+        Ok(FeatureMigration::from_slice(
+            p.get(..size_of::<FeatureMigration>())
+                .ok_or(Error::InvalidInput)?,
+        )
+        .ok_or(Error::InvalidInput)?
+        .flags)
+    }
+    /// Transition the device to a VFIO_DEVICE_STATE_* value.
+    pub fn set_device_state(&mut self, state: u32) -> Result<(), Error> {
+        let st = FeatureMigState {
+            device_state: state,
+            data_fd: 0,
+        };
+        self.device_feature(
+            VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE | VFIO_DEVICE_FEATURE_SET,
+            st.as_slice(),
+            0,
+        )?;
+        Ok(())
+    }
+    /// Read the current device migration state.
+    pub fn get_device_state(&mut self) -> Result<u32, Error> {
+        let p = self.device_feature(
+            VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE | VFIO_DEVICE_FEATURE_GET,
+            &[],
+            size_of::<FeatureMigState>(),
+        )?;
+        Ok(FeatureMigState::from_slice(
+            p.get(..size_of::<FeatureMigState>())
+                .ok_or(Error::InvalidInput)?,
+        )
+        .ok_or(Error::InvalidInput)?
+        .device_state)
+    }
+    /// Start DMA dirty logging over the given IOVA ranges at `page_size`.
+    pub fn dma_logging_start(
+        &mut self,
+        page_size: u64,
+        ranges: &[(u64, u64)],
+    ) -> Result<(), Error> {
+        let mut data = Vec::new();
+        data.extend_from_slice(
+            DmaLoggingControl {
+                page_size,
+                num_ranges: ranges.len() as u32,
+                reserved: 0,
+            }
+            .as_slice(),
+        );
+        for (iova, length) in ranges {
+            data.extend_from_slice(
+                DmaLoggingRange {
+                    iova: *iova,
+                    length: *length,
+                }
+                .as_slice(),
+            );
+        }
+        self.device_feature(
+            VFIO_DEVICE_FEATURE_DMA_LOGGING_START | VFIO_DEVICE_FEATURE_SET,
+            &data,
+            0,
+        )?;
+        Ok(())
+    }
+    /// Stop DMA dirty logging.
+    pub fn dma_logging_stop(&mut self) -> Result<(), Error> {
+        self.device_feature(
+            VFIO_DEVICE_FEATURE_DMA_LOGGING_STOP | VFIO_DEVICE_FEATURE_SET,
+            &[],
+            0,
+        )?;
+        Ok(())
+    }
+    /// Report-and-clear the dirty bitmap for [iova, iova+length) (1 bit per page_size, LSB-first).
+    pub fn dma_logging_report(
+        &mut self,
+        iova: u64,
+        length: u64,
+        page_size: u64,
+    ) -> Result<Vec<u8>, Error> {
+        let req = DmaLoggingReport {
+            iova,
+            length,
+            page_size,
+        };
+        let bitmap_bytes = (length.div_ceil(page_size.max(1)) as usize).div_ceil(8);
+        let p = self.device_feature(
+            VFIO_DEVICE_FEATURE_DMA_LOGGING_REPORT | VFIO_DEVICE_FEATURE_GET,
+            req.as_slice(),
+            size_of::<DmaLoggingReport>() + bitmap_bytes,
+        )?;
+        Ok(p.get(size_of::<DmaLoggingReport>()..)
+            .unwrap_or(&[])
+            .to_vec())
+    }
+    /// Read one chunk of serialized device state into `buf`. Returns bytes read; a short fill
+    /// (return value < `buf.len()`, including 0) marks end-of-stream per the vfio-user MIG_DATA
+    /// contract — callers must stop once they see one.
+    pub fn read_migration_data(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        let cmd = MigData {
+            header: Header {
+                message_id: self.next_message_id.0,
+                command: Command::MigDataRead as u16,
+                flags: HeaderFlags::Command as u32,
+                message_size: size_of::<MigData>() as u32,
+                ..Default::default()
+            },
+            // argsz must cover the reply (body + up to `size` bytes), or a peer rejects the request.
+            argsz: (size_of::<MigData>() - size_of::<Header>() + buf.len()) as u32,
+            size: buf.len() as u32,
+        };
+        self.next_message_id += Wrapping(1);
+        self.stream
+            .write_all(cmd.as_slice())
+            .map_err(Error::StreamWrite)?;
+        // Header first so an error reply (header-only) is not parsed as MIG_DATA.
+        let mut hdr = Header::default();
+        self.stream
+            .read_exact(hdr.as_mut_slice())
+            .map_err(Error::StreamRead)?;
+        let rest = (hdr.message_size as usize).saturating_sub(size_of::<Header>());
+        let mut rest_buf = vec![0u8; rest];
+        self.stream
+            .read_exact(&mut rest_buf)
+            .map_err(Error::StreamRead)?;
+        if hdr.flags & HeaderFlags::Error as u32 != 0 || hdr.error != 0 {
+            return Err(Error::RemoteError(hdr.error));
+        }
+        // rest_buf = [argsz u32][size u32][data...]; the byte count is at offset 4.
+        let size = u32::from_le_bytes(
+            rest_buf
+                .get(4..8)
+                .ok_or(Error::InvalidInput)?
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let n = size.min(buf.len());
+        buf[..n].copy_from_slice(rest_buf.get(8..8 + n).ok_or(Error::InvalidInput)?);
+        Ok(n)
+    }
+    /// Write one chunk of serialized device state.
+    pub fn write_migration_data(&mut self, buf: &[u8]) -> Result<(), Error> {
+        let cmd = MigData {
+            header: Header {
+                message_id: self.next_message_id.0,
+                command: Command::MigDataWrite as u16,
+                flags: HeaderFlags::Command as u32,
+                message_size: (size_of::<MigData>() + buf.len()) as u32,
+                ..Default::default()
+            },
+            argsz: (size_of::<MigData>() - size_of::<Header>() + buf.len()) as u32,
+            size: buf.len() as u32,
+        };
+        self.next_message_id += Wrapping(1);
+        // One write (header + data): the server reads the body with a single recv() that rejects a
+        // partial read, so the message must arrive contiguously.
+        let mut req = cmd.as_slice().to_vec();
+        req.extend_from_slice(buf);
+        self.stream.write_all(&req).map_err(Error::StreamWrite)?;
+        let mut reply = Header::default();
+        self.stream
+            .read_exact(reply.as_mut_slice())
+            .map_err(Error::StreamRead)?;
+        let rest = (reply.message_size as usize).saturating_sub(size_of::<Header>());
+        if rest > 0 {
+            let mut drain = vec![0u8; rest];
+            self.stream
+                .read_exact(&mut drain)
+                .map_err(Error::StreamRead)?;
+        }
+        if reply.flags & HeaderFlags::Error as u32 != 0 || reply.error != 0 {
+            return Err(Error::RemoteError(reply.error));
+        }
         Ok(())
     }
 
@@ -860,6 +1197,57 @@ pub trait ServerBackend {
         _count: u32,
         _fds: Vec<File>,
     ) -> Result<(), std::io::Error>;
+
+    // Migration v2 (default: not supported; a migratable backend overrides these).
+    /// Supported-migration flags (VFIO_MIGRATION_*), or None if not migratable. Some(..) makes the
+    /// server advertise migration via VFIO_DEVICE_FEATURE_MIGRATION.
+    fn migration_flags(&mut self) -> Option<u64> {
+        None
+    }
+    /// Transition the device migration state to a VFIO_DEVICE_STATE_* value (the v2 FSM). The
+    /// backend quiesces / serializes / rehydrates accordingly.
+    fn migration_set_state(&mut self, _state: u32) -> Result<(), std::io::Error> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+    /// Current device migration state (VFIO_DEVICE_STATE_*).
+    fn migration_get_state(&mut self) -> Result<u32, std::io::Error> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+    /// Read the NEXT chunk of serialized device state into `buf` (sequential; valid in
+    /// STOP_COPY/PRE_COPY). Fill as much of `buf` as remains and return the count; a return
+    /// < `buf.len()` (including 0) signals end-of-stream to the client. The backend tracks its own
+    /// read position and resets it when entering STOP_COPY/PRE_COPY via migration_set_state.
+    fn migration_read_data(&mut self, _buf: &mut [u8]) -> Result<usize, std::io::Error> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+    /// Write the NEXT chunk of serialized device state (sequential; valid in RESUMING). The backend
+    /// tracks its own write position and resets it when entering RESUMING via migration_set_state.
+    fn migration_write_data(&mut self, _buf: &[u8]) -> Result<(), std::io::Error> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+    /// Start DMA dirty logging for the given guest IOVA `ranges` (iova,len) at `page_size`.
+    fn dma_logging_start(
+        &mut self,
+        _page_size: u64,
+        _ranges: &[(u64, u64)],
+    ) -> Result<(), std::io::Error> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+    /// Stop DMA dirty logging and free the bitmaps.
+    fn dma_logging_stop(&mut self) -> Result<(), std::io::Error> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+    /// Report-and-CLEAR the dirty bitmap for [iova, iova+len) into `bitmap` (1 bit per `page_size`,
+    /// LSB-first). On ANY error the caller must treat the whole range as dirty.
+    fn dma_logging_report(
+        &mut self,
+        _iova: u64,
+        _len: u64,
+        _page_size: u64,
+        _bitmap: &mut [u8],
+    ) -> Result<(), std::io::Error> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -919,6 +1307,207 @@ impl Server {
             | Command::DmaWrite
             | Command::UserDirtyPages => {
                 return Err(Error::UnsupportedCommand(command));
+            }
+            // Migration v2 (device-feature + mig-data over the wire).
+            Command::DeviceFeature => {
+                let mut df = DeviceFeatureHdr {
+                    header,
+                    ..Default::default()
+                };
+                stream
+                    .read_exact(&mut df.as_mut_slice()[size_of::<Header>()..])
+                    .map_err(Error::StreamRead)?;
+                let feature = df.flags & VFIO_DEVICE_FEATURE_MASK;
+                let is_get = df.flags & VFIO_DEVICE_FEATURE_GET != 0;
+                let dlen =
+                    (df.header.message_size as usize).saturating_sub(size_of::<DeviceFeatureHdr>());
+                let mut data = vec![0u8; dlen];
+                stream.read_exact(&mut data).map_err(Error::StreamRead)?;
+
+                // Build the reply payload that follows the echoed DeviceFeatureHdr.
+                let mut out: Vec<u8> = Vec::new();
+                match feature {
+                    VFIO_DEVICE_FEATURE_MIGRATION => {
+                        let flags = backend
+                            .migration_flags()
+                            .ok_or(Error::UnsupportedCommand(command))?;
+                        if is_get {
+                            out.extend_from_slice(FeatureMigration { flags }.as_slice());
+                        }
+                    }
+                    VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE => {
+                        if is_get {
+                            let st = backend.migration_get_state().map_err(Error::Backend)?;
+                            out.extend_from_slice(
+                                FeatureMigState {
+                                    device_state: st,
+                                    data_fd: 0,
+                                }
+                                .as_slice(),
+                            );
+                        } else {
+                            let st = FeatureMigState::from_slice(
+                                data.get(..size_of::<FeatureMigState>())
+                                    .ok_or(Error::InvalidInput)?,
+                            )
+                            .ok_or(Error::InvalidInput)?;
+                            backend
+                                .migration_set_state(st.device_state)
+                                .map_err(Error::Backend)?;
+                        }
+                    }
+                    VFIO_DEVICE_FEATURE_DMA_LOGGING_START => {
+                        let ctrl = *DmaLoggingControl::from_slice(
+                            data.get(..size_of::<DmaLoggingControl>())
+                                .ok_or(Error::InvalidInput)?,
+                        )
+                        .ok_or(Error::InvalidInput)?;
+                        let base = size_of::<DmaLoggingControl>();
+                        let n = ctrl.num_ranges as usize;
+                        // num_ranges is wire-controlled: require the message to actually carry that many
+                        // ranges before allocating, so a bogus count can't force a huge allocation.
+                        let need = base
+                            .checked_add(
+                                n.checked_mul(size_of::<DmaLoggingRange>())
+                                    .ok_or(Error::InvalidInput)?,
+                            )
+                            .ok_or(Error::InvalidInput)?;
+                        if data.len() < need {
+                            return Err(Error::InvalidInput);
+                        }
+                        let mut ranges = Vec::with_capacity(n);
+                        for i in 0..n {
+                            let off = base + i * size_of::<DmaLoggingRange>();
+                            let r = DmaLoggingRange::from_slice(
+                                &data[off..off + size_of::<DmaLoggingRange>()],
+                            )
+                            .ok_or(Error::InvalidInput)?;
+                            ranges.push((r.iova, r.length));
+                        }
+                        backend
+                            .dma_logging_start(ctrl.page_size, &ranges)
+                            .map_err(Error::Backend)?;
+                    }
+                    VFIO_DEVICE_FEATURE_DMA_LOGGING_STOP => {
+                        backend.dma_logging_stop().map_err(Error::Backend)?;
+                    }
+                    VFIO_DEVICE_FEATURE_DMA_LOGGING_REPORT => {
+                        let rep = *DmaLoggingReport::from_slice(
+                            data.get(..size_of::<DmaLoggingReport>())
+                                .ok_or(Error::InvalidInput)?,
+                        )
+                        .ok_or(Error::InvalidInput)?;
+                        if rep.page_size == 0 {
+                            return Err(Error::InvalidInput);
+                        }
+                        let nbytes = (rep.length.div_ceil(rep.page_size) as usize).div_ceil(8);
+                        if nbytes > MAX_DMA_LOG_BITMAP {
+                            return Err(Error::InvalidInput);
+                        }
+                        let mut bitmap = vec![0u8; nbytes];
+                        backend
+                            .dma_logging_report(rep.iova, rep.length, rep.page_size, &mut bitmap)
+                            .map_err(Error::Backend)?;
+                        out.extend_from_slice(rep.as_slice());
+                        out.extend_from_slice(&bitmap);
+                    }
+                    _ => return Err(Error::UnsupportedCommand(command)),
+                }
+                if df.header.no_reply() {
+                    return Ok(());
+                }
+                // A SET reply echoes the request verbatim (client's argsz and payload unchanged);
+                // a GET reply carries the queried payload with argsz set to the reply length. This
+                // matches libvfio-user, so a libvfio-user client accepts the reply.
+                let (argsz, body): (u32, &[u8]) = if is_get {
+                    (
+                        (size_of::<DeviceFeatureHdr>() - size_of::<Header>() + out.len()) as u32,
+                        &out,
+                    )
+                } else {
+                    (df.argsz, &data)
+                };
+                let reply = DeviceFeatureHdr {
+                    header: Header {
+                        message_id: df.header.message_id,
+                        command: Command::DeviceFeature as u16,
+                        flags: HeaderFlags::Reply as u32,
+                        message_size: (size_of::<DeviceFeatureHdr>() + body.len()) as u32,
+                        ..Default::default()
+                    },
+                    argsz,
+                    flags: df.flags,
+                };
+                stream
+                    .write_all(reply.as_slice())
+                    .map_err(Error::StreamWrite)?;
+                if !body.is_empty() {
+                    stream.write_all(body).map_err(Error::StreamWrite)?;
+                }
+            }
+            Command::MigDataRead => {
+                let mut md = MigData {
+                    header,
+                    ..Default::default()
+                };
+                stream
+                    .read_exact(&mut md.as_mut_slice()[size_of::<Header>()..])
+                    .map_err(Error::StreamRead)?;
+                if md.size as usize > MAX_MIG_DATA_SIZE {
+                    return Err(Error::InvalidInput);
+                }
+                let mut buf = vec![0u8; md.size as usize];
+                let n = backend
+                    .migration_read_data(&mut buf)
+                    .map_err(Error::Backend)?;
+                // The reply data is always the full requested size (zero-padded past the n valid
+                // bytes); `size` carries the actual count, and size < requested signals end-of-stream.
+                // libvfio-user requires this fixed length, so a short read mustn't truncate the wire.
+                let reply = MigData {
+                    header: Header {
+                        message_id: md.header.message_id,
+                        command: Command::MigDataRead as u16,
+                        flags: HeaderFlags::Reply as u32,
+                        message_size: (size_of::<MigData>() + buf.len()) as u32,
+                        ..Default::default()
+                    },
+                    argsz: (size_of::<MigData>() - size_of::<Header>() + n) as u32,
+                    size: n as u32,
+                };
+                stream
+                    .write_all(reply.as_slice())
+                    .map_err(Error::StreamWrite)?;
+                if !buf.is_empty() {
+                    stream.write_all(&buf).map_err(Error::StreamWrite)?;
+                }
+            }
+            Command::MigDataWrite => {
+                let mut md = MigData {
+                    header,
+                    ..Default::default()
+                };
+                stream
+                    .read_exact(&mut md.as_mut_slice()[size_of::<Header>()..])
+                    .map_err(Error::StreamRead)?;
+                if md.size as usize > MAX_MIG_DATA_SIZE {
+                    return Err(Error::InvalidInput);
+                }
+                let mut buf = vec![0u8; md.size as usize];
+                stream.read_exact(&mut buf).map_err(Error::StreamRead)?;
+                backend.migration_write_data(&buf).map_err(Error::Backend)?;
+                if md.header.no_reply() {
+                    return Ok(());
+                }
+                let reply = Header {
+                    message_id: md.header.message_id,
+                    command: Command::MigDataWrite as u16,
+                    flags: HeaderFlags::Reply as u32,
+                    message_size: size_of::<Header>() as u32,
+                    ..Default::default()
+                };
+                stream
+                    .write_all(reply.as_slice())
+                    .map_err(Error::StreamWrite)?;
             }
             Command::Version => {
                 if header.no_reply() {
@@ -1526,5 +2115,193 @@ mod tests {
 
         let parsed = Client::parse_region_caps(&[], &region_info).unwrap();
         assert!(parsed.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+    use std::io::Read;
+    use std::num::Wrapping;
+    use std::os::unix::net::UnixStream;
+    use std::path::Path;
+    use std::sync::{Arc, Mutex};
+
+    /// A tiny migratable mock device: an FSM, a fixed device-state blob, and a dirty bitmap.
+    #[derive(Default)]
+    struct MockMig {
+        state: u32,
+        read_pos: usize,
+        write_buf: Vec<u8>,
+        blob: Vec<u8>,
+        dma_active: bool,
+        dma_page_size: u64,
+    }
+    impl ServerBackend for MockMig {
+        fn region_read(&mut self, _r: u32, _o: u64, _d: &mut [u8]) -> Result<(), std::io::Error> {
+            Ok(())
+        }
+        fn region_write(&mut self, _r: u32, _o: u64, _d: &[u8]) -> Result<(), std::io::Error> {
+            Ok(())
+        }
+        fn dma_map(
+            &mut self,
+            _f: DmaMapFlags,
+            _o: u64,
+            _a: u64,
+            _s: u64,
+            _fd: Option<File>,
+        ) -> Result<(), std::io::Error> {
+            Ok(())
+        }
+        fn dma_unmap(&mut self, _f: DmaUnmapFlags, _a: u64, _s: u64) -> Result<(), std::io::Error> {
+            Ok(())
+        }
+        fn reset(&mut self) -> Result<(), std::io::Error> {
+            Ok(())
+        }
+        fn set_irqs(
+            &mut self,
+            _i: u32,
+            _f: u32,
+            _s: u32,
+            _c: u32,
+            _fds: Vec<File>,
+        ) -> Result<(), std::io::Error> {
+            Ok(())
+        }
+        fn migration_flags(&mut self) -> Option<u64> {
+            Some(VFIO_MIGRATION_STOP_COPY | VFIO_MIGRATION_PRE_COPY)
+        }
+        fn migration_set_state(&mut self, s: u32) -> Result<(), std::io::Error> {
+            self.state = s;
+            if s == VFIO_DEVICE_STATE_STOP_COPY {
+                self.read_pos = 0;
+                self.blob = b"NVMEDEV-STATE-blob-1234567890-ABCDEF".to_vec();
+            }
+            if s == VFIO_DEVICE_STATE_RESUMING {
+                self.write_buf.clear();
+            }
+            Ok(())
+        }
+        fn migration_get_state(&mut self) -> Result<u32, std::io::Error> {
+            Ok(self.state)
+        }
+        fn migration_read_data(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
+            let n = (self.blob.len() - self.read_pos).min(buf.len());
+            buf[..n].copy_from_slice(&self.blob[self.read_pos..self.read_pos + n]);
+            self.read_pos += n;
+            Ok(n)
+        }
+        fn migration_write_data(&mut self, buf: &[u8]) -> Result<(), std::io::Error> {
+            self.write_buf.extend_from_slice(buf);
+            Ok(())
+        }
+        fn dma_logging_start(
+            &mut self,
+            page_size: u64,
+            _ranges: &[(u64, u64)],
+        ) -> Result<(), std::io::Error> {
+            self.dma_active = true;
+            self.dma_page_size = page_size;
+            Ok(())
+        }
+        fn dma_logging_stop(&mut self) -> Result<(), std::io::Error> {
+            self.dma_active = false;
+            Ok(())
+        }
+        fn dma_logging_report(
+            &mut self,
+            _iova: u64,
+            _len: u64,
+            _ps: u64,
+            bitmap: &mut [u8],
+        ) -> Result<(), std::io::Error> {
+            // Mark pages 0 and 2 dirty (LSB-first): bit0 | bit2 = 0b0000_0101.
+            if !bitmap.is_empty() {
+                bitmap[0] = 0b0000_0101;
+            }
+            Ok(())
+        }
+    }
+
+    /// Full device-state migration round-trip (FSM + MIG_DATA read/write + DMA logging) driven by
+    /// the Client over a socketpair against the Server dispatch + a mock backend.
+    #[test]
+    fn migration_v2_roundtrip() {
+        let (client_s, server_s) = UnixStream::pair().unwrap();
+        let backend = Arc::new(Mutex::new(MockMig::default()));
+        let backend2 = backend.clone();
+
+        let server_thread = std::thread::spawn(move || {
+            let tmp = format!("/tmp/vfu-migtest-{}.sock", std::process::id());
+            let _ = std::fs::remove_file(&tmp);
+            let server = Server::new(Path::new(&tmp), true, vec![], vec![]).unwrap();
+            let mut s = server_s;
+            loop {
+                let mut h = Header::default();
+                if s.read_exact(h.as_mut_slice()).is_err() {
+                    break;
+                }
+                let mut guard = backend2.lock().unwrap();
+                if server
+                    .handle_command(&mut *guard, &mut s, h, vec![])
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            let _ = std::fs::remove_file(&tmp);
+        });
+
+        let mut client = Client {
+            stream: client_s,
+            next_message_id: Wrapping(0),
+            num_irqs: 0,
+            resettable: false,
+            regions: vec![],
+        };
+
+        // 1) advertise/query migration support
+        assert_eq!(
+            client.query_migration().unwrap(),
+            VFIO_MIGRATION_STOP_COPY | VFIO_MIGRATION_PRE_COPY
+        );
+        // 2) FSM: RUNNING -> STOP -> STOP_COPY, and read it back
+        client.set_device_state(VFIO_DEVICE_STATE_STOP).unwrap();
+        client
+            .set_device_state(VFIO_DEVICE_STATE_STOP_COPY)
+            .unwrap();
+        assert_eq!(
+            client.get_device_state().unwrap(),
+            VFIO_DEVICE_STATE_STOP_COPY
+        );
+        // 3) stream the device-state blob in small chunks until EOF
+        let mut blob = Vec::new();
+        let mut buf = [0u8; 8];
+        loop {
+            let n = client.read_migration_data(&mut buf).unwrap();
+            blob.extend_from_slice(&buf[..n]);
+            if n < buf.len() {
+                break; // short read (incl. 0) == end of stream
+            }
+        }
+        assert_eq!(blob, b"NVMEDEV-STATE-blob-1234567890-ABCDEF");
+        // 4) destination: RESUMING, write the blob back, verify it round-tripped byte-for-byte
+        client.set_device_state(VFIO_DEVICE_STATE_RESUMING).unwrap();
+        for chunk in blob.chunks(7) {
+            client.write_migration_data(chunk).unwrap();
+        }
+        assert_eq!(backend.lock().unwrap().write_buf, blob);
+        // 5) DMA dirty logging: start, report (bitmap), stop
+        client.dma_logging_start(4096, &[(0, 4096 * 8)]).unwrap();
+        assert!(backend.lock().unwrap().dma_active);
+        let bm = client.dma_logging_report(0, 4096 * 8, 4096).unwrap();
+        assert_eq!(bm[0], 0b0000_0101); // pages 0 and 2 dirty
+        client.dma_logging_stop().unwrap();
+        assert!(!backend.lock().unwrap().dma_active);
+
+        drop(client); // ends the server loop
+        server_thread.join().unwrap();
     }
 }

@@ -6,6 +6,12 @@
 
 ## Fixed
 
+# [v0.7.0]
+
+## Changed
+
+- Bump `kvm-ioctls` dependency to 0.25.0
+
 # [v0.6.1]
 
 ## Changed

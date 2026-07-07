@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::{IoSlice, Read, Write};
 use std::mem::size_of;
 use std::num::Wrapping;
+use std::os::fd::OwnedFd;
 use std::os::unix::{
     io::{FromRawFd, RawFd},
     net::{UnixListener, UnixStream},
@@ -876,7 +877,7 @@ pub struct ServerRegion {
 
 pub struct Server {
     listener: UnixListener,
-    path: PathBuf,
+    path: Option<PathBuf>,
     resettable: bool,
     irqs: Vec<IrqInfo>,
     regions: Vec<ServerRegion>,
@@ -897,11 +898,28 @@ impl Server {
 
         Ok(Server {
             listener,
-            path: path.to_path_buf(),
+            path: Some(path.to_path_buf()),
             resettable,
             irqs,
             regions,
         })
+    }
+
+    pub fn from_owned_fd(
+        fd: OwnedFd,
+        resettable: bool,
+        irqs: Vec<IrqInfo>,
+        regions: Vec<ServerRegion>,
+    ) -> Server {
+        let listener = UnixListener::from(fd);
+
+        Server {
+            listener,
+            path: None,
+            resettable,
+            irqs,
+            regions,
+        }
     }
 
     fn handle_command(
@@ -1431,8 +1449,10 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        if self.path.exists() {
-            let _ = std::fs::remove_file(&self.path);
+        if let Some(path) = &self.path {
+            if path.exists() {
+                let _ = std::fs::remove_file(path);
+            }
         }
     }
 }

@@ -363,7 +363,7 @@ impl Client {
 
         debug!(
             "Sent client version information: major = {} minor = {} capabilities = {:?}",
-            version.major, version.minor, &caps.capabilities
+            version.major, version.minor, caps.capabilities
         );
 
         self.next_message_id += Wrapping(1);
@@ -387,7 +387,7 @@ impl Client {
 
         debug!(
             "Received server version information: major = {} minor = {} capabilities = {:?}",
-            server_version.major, server_version.minor, &server_caps.capabilities
+            server_version.major, server_version.minor, server_caps.capabilities
         );
 
         Ok(())

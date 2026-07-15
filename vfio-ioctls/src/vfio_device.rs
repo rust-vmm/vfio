@@ -22,7 +22,7 @@ use iommufd_bindings::*;
 use iommufd_ioctls::IommuFd;
 use log::{debug, error, warn};
 use vfio_bindings::bindings::vfio::*;
-use vm_memory::{Address, GuestMemory, GuestMemoryRegion, MemoryRegionAddress};
+use vm_memory::{Address, GuestMemoryBackend, GuestMemoryRegion, MemoryRegionAddress};
 use vmm_sys_util::eventfd::EventFd;
 
 use crate::fam::vec_with_array_field;
@@ -463,8 +463,8 @@ impl VfioContainer {
     /// # Safety
     ///
     /// Each of the memory regions must uphold the safety invariants of [`Self::vfio_dma_map`].
-    /// Additionally, the [`GuestMemory`] implementation must be well-behaved and uphold the
-    /// contracts in its documentation.
+    /// Additionally, the [`GuestMemoryBackend`] implementation must be well-behaved and uphold
+    /// the contracts in its documentation.
     ///
     /// If this function fails (returning [`core::result::Result::Err`]) there is no way to know
     /// which parts of the guest memory were successfully mapped.  The only safe action to take
@@ -477,12 +477,12 @@ impl VfioContainer {
     /// # Panics
     ///
     /// Panics if the length of one of the regions overflows `usize`.
-    pub unsafe fn vfio_map_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
+    pub unsafe fn vfio_map_guest_memory<M: GuestMemoryBackend>(&self, mem: &M) -> Result<()> {
         mem.iter().try_for_each(|region| {
             let host_addr = region
                 .get_host_address(MemoryRegionAddress(0))
                 .map_err(|_| VfioError::GetHostAddress)?;
-            // SAFETY: GuestMemory guarantees the requirements
+            // SAFETY: GuestMemoryBackend guarantees the requirements
             // are upheld.
             unsafe {
                 self.vfio_dma_map(
@@ -502,10 +502,10 @@ impl VfioContainer {
     /// # Precondition
     ///
     /// A previous call to [`Self::vfio_map_guest_memory`] must have succeeded, and iterating
-    /// over the regions in the [`GuestMemory`] must produce the same values it did in the
-    /// past.  This latter contract will be upheld by a correct [`GuestMemory`] implementation,
-    /// but [`GuestMemory`] is a safe trait and so unsafe code must not rely on this unless it
-    /// is explicitly part of a safety contract.
+    /// over the regions in the [`GuestMemoryBackend`] must produce the same values it did in
+    /// the past.  This latter contract will be upheld by a correct [`GuestMemoryBackend`]
+    /// implementation, but [`GuestMemoryBackend`] is a safe trait and so unsafe code must not
+    /// rely on this unless it is explicitly part of a safety contract.
     ///
     /// # Parameters
     /// * mem: pinned guest memory which could be accessed by devices binding to the container.
@@ -513,9 +513,9 @@ impl VfioContainer {
     /// # Panics
     ///
     /// Panics if the length of any of the regions overflows `usize`.  That should have been
-    /// caught by [`Self::vfio_map_guest_memory`], so it indicates a bogus [`GuestMemory`]
-    /// implementation.
-    pub fn vfio_unmap_guest_memory<M: GuestMemory>(&self, mem: &M) -> Result<()> {
+    /// caught by [`Self::vfio_map_guest_memory`], so it indicates a bogus
+    /// [`GuestMemoryBackend`] implementation.
+    pub fn vfio_unmap_guest_memory<M: GuestMemoryBackend>(&self, mem: &M) -> Result<()> {
         mem.iter().try_for_each(|region| {
             self.vfio_dma_unmap(
                 region.start_addr().raw_value(),

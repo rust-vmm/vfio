@@ -22,7 +22,7 @@ thiserror = { workspace = true }
 vfio-bindings = { version = "=0.6.2", path = "../vfio-bindings", features = [
   "fam-wrappers",
 ] }
-vm-memory = { version = ">= 0.16.0, < 0.18", features = [
+vm-memory = { version = ">= 0.16.0, < 0.19", features = [
   "backend-mmap",
   "backend-atomic",
 ] }

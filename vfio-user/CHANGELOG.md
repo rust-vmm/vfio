@@ -2,11 +2,15 @@
 
 ## Changed
 
-- [[163]](https://github.com/rust-vmm/vfio/pull/163) Support vm-memory 0.18
-
 ## Added
 
 ## Fixed
+
+# [v0.1.4]
+
+## Changed
+
+- [[163]](https://github.com/rust-vmm/vfio/pull/163) Support vm-memory 0.18
 
 # [v0.1.3]
 

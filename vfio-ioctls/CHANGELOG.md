@@ -2,11 +2,15 @@
 
 ## Changed
 
-- [[163]](https://github.com/rust-vmm/vfio/pull/163) Bump vm-memory dependency to 0.18
-
 ## Added
 
 ## Fixed
+
+# [v0.8.0]
+
+## Changed
+
+- [[163]](https://github.com/rust-vmm/vfio/pull/163) Bump vm-memory dependency to 0.18
 
 # [v0.7.0]
 

@@ -6,6 +6,12 @@
 
 ## Fixed
 
+# [v0.8.1]
+
+## Changed
+
+- [[165]](https://github.com/rust-vmm/vfio/pull/165) Upgrade mshv-bindings and mshv-ioctls to 0.7.0
+
 # [v0.8.0]
 
 ## Changed

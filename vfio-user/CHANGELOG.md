@@ -4,9 +4,13 @@
 
 ## Added
 
-- [[160]](https://github.com/rust-vmm/vfio/pull/160) construct vfio-user server from owned fd
-
 ## Fixed
+
+# [v0.1.5]
+
+## Added
+
+- [[160]](https://github.com/rust-vmm/vfio/pull/160) construct vfio-user server from owned fd
 
 # [v0.1.4]
 

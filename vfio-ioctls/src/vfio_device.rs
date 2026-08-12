@@ -727,6 +727,16 @@ impl VfioIommufd {
         Ok(vfio_iommufd)
     }
 
+    /// The iommufd devices are bound to.
+    pub fn iommufd(&self) -> &Arc<IommuFd> {
+        &self.iommufd
+    }
+
+    /// The IOAS devices are bound against.
+    pub fn ioas_id(&self) -> u32 {
+        self.ioas_id
+    }
+
     /// Map a region of user space memory (e.g. guest memory) into an IO
     /// address space managed by IOMMU hardware to enable DMA for
     /// associated VFIO devices
@@ -1209,6 +1219,7 @@ pub struct VfioDevice {
     pub(crate) vfio_ops: Arc<dyn VfioOps>,
     pub(crate) migration_data_fd: Mutex<Option<File>>,
     pub(crate) dma_logging_started: Mutex<bool>,
+    pub(crate) iommufd_dev_id: Option<u32>,
 }
 
 /// Remaining migration data reported by the kernel during precopy.
@@ -1241,7 +1252,8 @@ impl VfioDevice {
     }
 
     #[cfg(feature = "vfio_cdev")]
-    fn get_device_cdev_from_path(sysfspath: &Path) -> Result<File> {
+    /// Open the vfio cdev of the device at `sysfspath`.
+    pub fn open_cdev(sysfspath: &Path) -> Result<File> {
         // For the folder structure of vfio cdev, refer:
         // https://docs.kernel.org/driver-api/vfio.html#device-cdev-example
         let vfio_dev_path = sysfspath.join("vfio-dev");
@@ -1271,7 +1283,7 @@ impl VfioDevice {
     // the binding on the cdev file and rejects any subsequent attempts
     // (see `df->access_granted` in drivers/vfio/device_cdev.c).
     #[cfg(feature = "vfio_cdev")]
-    fn bind_cdev_to_iommufd(device: &File, vfio_iommufd: &VfioIommufd) -> Result<()> {
+    fn bind_cdev_to_iommufd(device: &File, vfio_iommufd: &VfioIommufd) -> Result<u32> {
         let mut bind = vfio_device_bind_iommufd {
             argsz: mem::size_of::<vfio_device_bind_iommufd>() as u32,
             flags: 0,
@@ -1280,7 +1292,7 @@ impl VfioDevice {
         };
         vfio_syscall::bind_device_iommufd(device, &mut bind)?;
 
-        Ok(())
+        Ok(bind.out_devid)
     }
 
     // Attach a cdev to the iommufd's IOAS
@@ -1307,7 +1319,7 @@ impl VfioDevice {
         #[cfg(feature = "vfio_cdev")]
         if let Some(vfio_iommufd) = vfio_ops.as_any().downcast_ref::<VfioIommufd>() {
             // Open the vfio cdev file
-            let device = Self::get_device_cdev_from_path(sysfspath)?;
+            let device = Self::open_cdev(sysfspath)?;
 
             // Add the vfio cdev file to VFIO-KVM device tracking
             vfio_iommufd
@@ -1346,6 +1358,7 @@ impl VfioDevice {
             vfio_ops,
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
+            iommufd_dev_id: None,
         })
     }
 
@@ -1361,10 +1374,13 @@ impl VfioDevice {
             .common
             .device_set_fd(device.as_raw_fd(), true)?;
 
-        if bind {
+        // The kernel only reports the id from the bind itself.
+        let iommufd_dev_id = if bind {
             // Bind the VFIO device to the iommufd file
-            Self::bind_cdev_to_iommufd(&device, &vfio_iommufd)?;
-        }
+            Some(Self::bind_cdev_to_iommufd(&device, &vfio_iommufd)?)
+        } else {
+            None
+        };
 
         if attach_ioas {
             // Associate the vfio device to the IOAS within the bound iommufd
@@ -1385,6 +1401,7 @@ impl VfioDevice {
             vfio_ops: vfio_iommufd,
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
+            iommufd_dev_id,
         })
     }
 
@@ -1399,9 +1416,15 @@ impl VfioDevice {
     /// * `device`: an opened vfio cdev file whose ownership is transferred
     ///   into the returned `VfioDevice`.
     /// * `vfio_iommufd`: the iommufd wrapper to bind the cdev to.
+    /// * `attach_ioas`: whether to attach the device to the iommufd's IOAS,
+    ///   or leave it for a caller that installs its own page table.
     #[cfg(feature = "vfio_cdev")]
-    pub fn new_from_fd(device: File, vfio_iommufd: Arc<VfioIommufd>) -> Result<Self> {
-        Self::from_cdev(device, vfio_iommufd, true, true)
+    pub fn new_from_fd(
+        device: File,
+        vfio_iommufd: Arc<VfioIommufd>,
+        attach_ioas: bool,
+    ) -> Result<Self> {
+        Self::from_cdev(device, vfio_iommufd, true, attach_ioas)
     }
 
     /// Construct a `VfioDevice` from a cdev file that is already
@@ -1416,9 +1439,19 @@ impl VfioDevice {
     /// * `device`: an opened, already-bound vfio cdev file whose
     ///   ownership is transferred into the returned `VfioDevice`.
     /// * `vfio_iommufd`: must wrap the iommufd the cdev was bound against.
+    /// * `attach_ioas`: see [`Self::new_from_fd`].
     #[cfg(feature = "vfio_cdev")]
-    pub fn new_from_bound_fd(device: File, vfio_iommufd: Arc<VfioIommufd>) -> Result<Self> {
-        Self::from_cdev(device, vfio_iommufd, false, true)
+    pub fn new_from_bound_fd(
+        device: File,
+        vfio_iommufd: Arc<VfioIommufd>,
+        attach_ioas: bool,
+    ) -> Result<Self> {
+        Self::from_cdev(device, vfio_iommufd, false, attach_ioas)
+    }
+
+    /// The iommufd device id, `None` if the device was not bound here.
+    pub fn iommufd_dev_id(&self) -> Option<u32> {
+        self.iommufd_dev_id
     }
 
     /// VFIO device reset only if the device supports being reset.
@@ -2236,6 +2269,7 @@ mod tests {
             vfio_ops: Arc::new(create_vfio_container()),
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
+            iommufd_dev_id: None,
         }
     }
 

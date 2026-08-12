@@ -10,6 +10,35 @@
 
 ## Fixed
 
+# [v0.9.0]
+
+## Changed
+- Bump `iommufd-bindings` to 0.2.0 and `iommufd-ioctls` to 0.3.1 dependencies
+  so that we can benefit from latest additions, in particular the AttachHwpt
+  trait definition.
+- `VfioDevice::new_from_fd` and `VfioDevice::new_from_bound_fd` now rely on
+  `Arc<VfioIommufd>` being explicitely provided. This removes the need for
+  downcasting from `Arc<dyn VfioOps>`.
+- `VfioDevice::new`, `VfioDevice::new_from_fd` and `VfioDevice::new_from_bound_fd`
+  now take an `attach_ioas` parameter, so that a caller can obtain a device that
+  is bound to an iommufd but left unattached, ready to be attached to the page
+  table of its choice. The legacy container mode ignores it.
+
+## Added
+- Add `VfioDevice::open_cdev`, which opens the vfio cdev of a device given its
+  sysfs path, for a caller that wants to hand it to `new_from_fd`.
+- Add `VfioIommufd::iommufd` and `VfioIommufd::ioas_id`, exposing the iommufd a
+  device is bound to and the IOAS it is bound against.
+- Add `VfioDevice::attach_hwpt` to attach a device to an iommufd page-table
+  object by id, and `VfioDevice::detach_hwpt` to detach it again so the page
+  tables it referenced can be destroyed, and implement
+  `iommufd_ioctls::AttachHwpt` for `VfioDevice` so a consumer can drive nested
+  translation without depending on this crate.
+- Add `VfioDevice::iommufd_dev_id`, the id the kernel assigned when the device
+  was bound, or `None` for legacy container/group devices.
+
+## Fixed
+
 # [v0.8.1]
 
 ## Changed

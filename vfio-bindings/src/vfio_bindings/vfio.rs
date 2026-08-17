@@ -883,17 +883,19 @@ const _: () = {
     ["Offset of field: vfio_device_bind_iommufd::out_devid"]
         [::std::mem::offset_of!(vfio_device_bind_iommufd, out_devid) - 12usize];
 };
+pub const VFIO_DEVICE_ATTACH_PASID: u32 = 1;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_device_attach_iommufd_pt {
     pub argsz: __u32,
     pub flags: __u32,
     pub pt_id: __u32,
+    pub pasid: __u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of vfio_device_attach_iommufd_pt"]
-        [::std::mem::size_of::<vfio_device_attach_iommufd_pt>() - 12usize];
+        [::std::mem::size_of::<vfio_device_attach_iommufd_pt>() - 16usize];
     ["Alignment of vfio_device_attach_iommufd_pt"]
         [::std::mem::align_of::<vfio_device_attach_iommufd_pt>() - 4usize];
     ["Offset of field: vfio_device_attach_iommufd_pt::argsz"]
@@ -902,23 +904,29 @@ const _: () = {
         [::std::mem::offset_of!(vfio_device_attach_iommufd_pt, flags) - 4usize];
     ["Offset of field: vfio_device_attach_iommufd_pt::pt_id"]
         [::std::mem::offset_of!(vfio_device_attach_iommufd_pt, pt_id) - 8usize];
+    ["Offset of field: vfio_device_attach_iommufd_pt::pasid"]
+        [::std::mem::offset_of!(vfio_device_attach_iommufd_pt, pasid) - 12usize];
 };
+pub const VFIO_DEVICE_DETACH_PASID: u32 = 1;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_device_detach_iommufd_pt {
     pub argsz: __u32,
     pub flags: __u32,
+    pub pasid: __u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of vfio_device_detach_iommufd_pt"]
-        [::std::mem::size_of::<vfio_device_detach_iommufd_pt>() - 8usize];
+        [::std::mem::size_of::<vfio_device_detach_iommufd_pt>() - 12usize];
     ["Alignment of vfio_device_detach_iommufd_pt"]
         [::std::mem::align_of::<vfio_device_detach_iommufd_pt>() - 4usize];
     ["Offset of field: vfio_device_detach_iommufd_pt::argsz"]
         [::std::mem::offset_of!(vfio_device_detach_iommufd_pt, argsz) - 0usize];
     ["Offset of field: vfio_device_detach_iommufd_pt::flags"]
         [::std::mem::offset_of!(vfio_device_detach_iommufd_pt, flags) - 4usize];
+    ["Offset of field: vfio_device_detach_iommufd_pt::pasid"]
+        [::std::mem::offset_of!(vfio_device_detach_iommufd_pt, pasid) - 8usize];
 };
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]

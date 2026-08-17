@@ -2,6 +2,9 @@
 
 ## Changed
 
+- [[167]](https://github.com/rust-vmm/vfio/pull/167) Extend the iommufd attach and detach structs with the pasid
+  field and the PASID flags from Linux v6.15
+
 ## Fixed
 
 ## Added

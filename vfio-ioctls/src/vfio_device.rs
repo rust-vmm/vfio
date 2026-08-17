@@ -19,7 +19,7 @@ use byteorder::{ByteOrder, NativeEndian};
 #[cfg(feature = "vfio_cdev")]
 use iommufd_bindings::*;
 #[cfg(feature = "vfio_cdev")]
-use iommufd_ioctls::IommuFd;
+use iommufd_ioctls::{AttachHwpt, IommuFd};
 use log::{debug, error, warn};
 use vfio_bindings::bindings::vfio::*;
 use vm_memory::{Address, GuestMemoryBackend, GuestMemoryRegion, MemoryRegionAddress};
@@ -1458,6 +1458,33 @@ impl VfioDevice {
         Self::from_cdev(device, vfio_iommufd, false, attach_ioas)
     }
 
+    /// Attach this device to an iommufd page table object by id.
+    #[cfg(feature = "vfio_cdev")]
+    pub fn attach_hwpt(&self, pt_id: u32) -> Result<()> {
+        let mut attach_data = vfio_device_attach_iommufd_pt {
+            argsz: mem::size_of::<vfio_device_attach_iommufd_pt>() as u32,
+            flags: 0,
+            pt_id,
+            pasid: 0,
+        };
+        vfio_syscall::attach_device_iommufd_pt(&self.device, &mut attach_data)?;
+
+        Ok(())
+    }
+
+    /// Detach this device from the iommufd page table object it is attached to.
+    #[cfg(feature = "vfio_cdev")]
+    pub fn detach_hwpt(&self) -> Result<()> {
+        let detach_data = vfio_device_detach_iommufd_pt {
+            argsz: mem::size_of::<vfio_device_detach_iommufd_pt>() as u32,
+            flags: 0,
+            pasid: 0,
+        };
+        vfio_syscall::detach_device_iommufd_pt(&self.device, &detach_data)?;
+
+        Ok(())
+    }
+
     /// The iommufd device id
     pub fn iommufd_dev_id(&self) -> Option<u32> {
         self.iommufd_dev_id
@@ -2135,6 +2162,17 @@ impl VfioDevice {
         // and returned to the caller after device_feature returns.
         vfio_syscall::device_feature(self, &mut feature_buf[0])?;
         Ok(bitmap)
+    }
+}
+
+#[cfg(feature = "vfio_cdev")]
+impl AttachHwpt for VfioDevice {
+    fn attach_hwpt(&self, pt_id: u32) -> std::io::Result<()> {
+        self.attach_hwpt(pt_id).map_err(std::io::Error::other)
+    }
+
+    fn detach_hwpt(&self) -> std::io::Result<()> {
+        self.detach_hwpt().map_err(std::io::Error::other)
     }
 }
 
@@ -2829,5 +2867,14 @@ mod tests {
 
         device.attach_iommufd_pt_pasid(1, 2).unwrap();
         device.detach_iommufd_pt_pasid(2).unwrap();
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    #[test]
+    fn test_attach_detach_hwpt() {
+        let device = create_vfio_device();
+
+        device.attach_hwpt(1).unwrap();
+        device.detach_hwpt().unwrap();
     }
 }

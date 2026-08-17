@@ -4,6 +4,10 @@
 
 ## Added
 
+- [[167]](https://github.com/rust-vmm/vfio/pull/167) Add `attach_iommufd_pt_pasid` and `detach_iommufd_pt_pasid` to
+  `VfioDevice` for the PASID variants of the iommufd attach and detach
+  ioctls
+
 ## Fixed
 
 # [v0.8.1]

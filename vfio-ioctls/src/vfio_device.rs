@@ -1353,29 +1353,23 @@ impl VfioDevice {
     ///
     /// This lets a caller pass in a pre-opened `/dev/vfio/devices/vfioN` FD
     /// instead of discovering it through the sysfs path of a PCI device. It
-    /// is only valid when `vfio_ops` is a [`VfioIommufd`]: the legacy
-    /// container/group mode does not expose a per-device cdev, so there is
-    /// no equivalent FD to pass.
+    /// It is iommufd only, the legacy container/group mode does not expose a
+    /// per device cdev, so there is no equivalent file descriptor to pass.
     ///
     /// # Parameters
     /// * `device`: an opened vfio cdev file whose ownership is transferred
     ///   into the returned `VfioDevice`.
-    /// * `vfio_ops`: must be a [`VfioIommufd`].
+    /// * `vfio_iommufd`: the iommufd wrapper to bind the cdev to.
     #[cfg(feature = "vfio_cdev")]
-    pub fn new_from_fd(device: File, vfio_ops: Arc<dyn VfioOps>) -> Result<Self> {
-        let vfio_iommufd = vfio_ops
-            .as_any()
-            .downcast_ref::<VfioIommufd>()
-            .ok_or(VfioError::DowncastVfioOps)?;
-
+    pub fn new_from_fd(device: File, vfio_iommufd: Arc<VfioIommufd>) -> Result<Self> {
         // Add the vfio cdev file to VFIO-KVM device tracking
         vfio_iommufd
             .common
             .device_set_fd(device.as_raw_fd(), true)?;
         // Bind the VFIO device to the iommufd file
-        Self::bind_cdev_to_iommufd(&device, vfio_iommufd)?;
+        Self::bind_cdev_to_iommufd(&device, &vfio_iommufd)?;
         // Associate the vfio device to the IOAS within the bound iommufd
-        Self::attach_cdev_to_ioas(&device, vfio_iommufd)?;
+        Self::attach_cdev_to_ioas(&device, &vfio_iommufd)?;
 
         let dev_info = VfioDeviceInfo::get_device_info(&device)?;
         let device_info = VfioDeviceInfo::new(device, &dev_info);
@@ -1388,7 +1382,7 @@ impl VfioDevice {
             regions,
             irqs,
             sysfspath: None,
-            vfio_ops,
+            vfio_ops: vfio_iommufd,
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
         })
@@ -1405,21 +1399,15 @@ impl VfioDevice {
     /// # Parameters
     /// * `device`: an opened, already-bound vfio cdev file whose
     ///   ownership is transferred into the returned `VfioDevice`.
-    /// * `vfio_ops`: must be a [`VfioIommufd`] whose iommufd is the
-    ///   same one the cdev was previously bound against.
+    /// * `vfio_iommufd`: must wrap the iommufd the cdev was bound against.
     #[cfg(feature = "vfio_cdev")]
-    pub fn new_from_bound_fd(device: File, vfio_ops: Arc<dyn VfioOps>) -> Result<Self> {
-        let vfio_iommufd = vfio_ops
-            .as_any()
-            .downcast_ref::<VfioIommufd>()
-            .ok_or(VfioError::DowncastVfioOps)?;
-
+    pub fn new_from_bound_fd(device: File, vfio_iommufd: Arc<VfioIommufd>) -> Result<Self> {
         // Add the vfio cdev file to VFIO-KVM device tracking
         vfio_iommufd
             .common
             .device_set_fd(device.as_raw_fd(), true)?;
         // Associate the vfio device to the IOAS within the bound iommufd
-        Self::attach_cdev_to_ioas(&device, vfio_iommufd)?;
+        Self::attach_cdev_to_ioas(&device, &vfio_iommufd)?;
 
         let dev_info = VfioDeviceInfo::get_device_info(&device)?;
         let device_info = VfioDeviceInfo::new(device, &dev_info);
@@ -1432,7 +1420,7 @@ impl VfioDevice {
             regions,
             irqs,
             sysfspath: None,
-            vfio_ops,
+            vfio_ops: vfio_iommufd,
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
         })
@@ -2757,31 +2745,5 @@ mod tests {
 
         let flags: u32 = VFIO_DEVICE_FLAGS_AP;
         assert_eq!(flags, VfioDeviceInfo::get_device_type(&flags));
-    }
-
-    #[cfg(feature = "vfio_cdev")]
-    #[test]
-    fn test_vfio_device_new_from_fd_rejects_container() {
-        let tmp_file = TempFile::new().unwrap();
-        let device = File::open(tmp_file.as_path()).unwrap();
-        let container: Arc<dyn VfioOps> = Arc::new(create_vfio_container());
-
-        assert!(matches!(
-            VfioDevice::new_from_fd(device, container),
-            Err(VfioError::DowncastVfioOps)
-        ));
-    }
-
-    #[cfg(feature = "vfio_cdev")]
-    #[test]
-    fn test_vfio_device_new_from_bound_fd_rejects_container() {
-        let tmp_file = TempFile::new().unwrap();
-        let device = File::open(tmp_file.as_path()).unwrap();
-        let container: Arc<dyn VfioOps> = Arc::new(create_vfio_container());
-
-        assert!(matches!(
-            VfioDevice::new_from_bound_fd(device, container),
-            Err(VfioError::DowncastVfioOps)
-        ));
     }
 }

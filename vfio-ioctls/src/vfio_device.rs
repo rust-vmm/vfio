@@ -1349,27 +1349,27 @@ impl VfioDevice {
         })
     }
 
-    /// Create a new vfio device from an already-opened vfio cdev file.
-    ///
-    /// This lets a caller pass in a pre-opened `/dev/vfio/devices/vfioN` FD
-    /// instead of discovering it through the sysfs path of a PCI device. It
-    /// It is iommufd only, the legacy container/group mode does not expose a
-    /// per device cdev, so there is no equivalent file descriptor to pass.
-    ///
-    /// # Parameters
-    /// * `device`: an opened vfio cdev file whose ownership is transferred
-    ///   into the returned `VfioDevice`.
-    /// * `vfio_iommufd`: the iommufd wrapper to bind the cdev to.
     #[cfg(feature = "vfio_cdev")]
-    pub fn new_from_fd(device: File, vfio_iommufd: Arc<VfioIommufd>) -> Result<Self> {
+    fn from_cdev(
+        device: File,
+        vfio_iommufd: Arc<VfioIommufd>,
+        bind: bool,
+        attach_ioas: bool,
+    ) -> Result<Self> {
         // Add the vfio cdev file to VFIO-KVM device tracking
         vfio_iommufd
             .common
             .device_set_fd(device.as_raw_fd(), true)?;
-        // Bind the VFIO device to the iommufd file
-        Self::bind_cdev_to_iommufd(&device, &vfio_iommufd)?;
-        // Associate the vfio device to the IOAS within the bound iommufd
-        Self::attach_cdev_to_ioas(&device, &vfio_iommufd)?;
+
+        if bind {
+            // Bind the VFIO device to the iommufd file
+            Self::bind_cdev_to_iommufd(&device, &vfio_iommufd)?;
+        }
+
+        if attach_ioas {
+            // Associate the vfio device to the IOAS within the bound iommufd
+            Self::attach_cdev_to_ioas(&device, &vfio_iommufd)?;
+        }
 
         let dev_info = VfioDeviceInfo::get_device_info(&device)?;
         let device_info = VfioDeviceInfo::new(device, &dev_info);
@@ -1388,8 +1388,24 @@ impl VfioDevice {
         })
     }
 
+    /// Create a new vfio device from an already-opened vfio cdev file.
+    ///
+    /// This lets a caller pass in a pre-opened `/dev/vfio/devices/vfioN` FD
+    /// instead of discovering it through the sysfs path of a PCI device.
+    /// It is iommufd only, the legacy container/group mode does not expose a
+    /// per device cdev, so there is no equivalent file descriptor to pass.
+    ///
+    /// # Parameters
+    /// * `device`: an opened vfio cdev file whose ownership is transferred
+    ///   into the returned `VfioDevice`.
+    /// * `vfio_iommufd`: the iommufd wrapper to bind the cdev to.
+    #[cfg(feature = "vfio_cdev")]
+    pub fn new_from_fd(device: File, vfio_iommufd: Arc<VfioIommufd>) -> Result<Self> {
+        Self::from_cdev(device, vfio_iommufd, true, true)
+    }
+
     /// Construct a `VfioDevice` from a cdev file that is already
-    /// bound to `vfio_ops`'s iommufd.
+    /// bound to `vfio_iommufd`'s iommufd.
     ///
     /// The cdev's bind state lives on the kernel `vfio_device_file`
     /// and survives as long as the cdev struct file stays open.
@@ -1402,28 +1418,7 @@ impl VfioDevice {
     /// * `vfio_iommufd`: must wrap the iommufd the cdev was bound against.
     #[cfg(feature = "vfio_cdev")]
     pub fn new_from_bound_fd(device: File, vfio_iommufd: Arc<VfioIommufd>) -> Result<Self> {
-        // Add the vfio cdev file to VFIO-KVM device tracking
-        vfio_iommufd
-            .common
-            .device_set_fd(device.as_raw_fd(), true)?;
-        // Associate the vfio device to the IOAS within the bound iommufd
-        Self::attach_cdev_to_ioas(&device, &vfio_iommufd)?;
-
-        let dev_info = VfioDeviceInfo::get_device_info(&device)?;
-        let device_info = VfioDeviceInfo::new(device, &dev_info);
-        let regions = device_info.get_regions()?;
-        let irqs = device_info.get_irqs()?;
-
-        Ok(VfioDevice {
-            device: ManuallyDrop::new(device_info.device),
-            flags: device_info.flags,
-            regions,
-            irqs,
-            sysfspath: None,
-            vfio_ops: vfio_iommufd,
-            migration_data_fd: Mutex::new(None),
-            dma_logging_started: Mutex::new(false),
-        })
+        Self::from_cdev(device, vfio_iommufd, false, true)
     }
 
     /// VFIO device reset only if the device supports being reset.

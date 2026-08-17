@@ -1439,6 +1439,42 @@ impl VfioDevice {
         })
     }
 
+    #[cfg(feature = "vfio_cdev")]
+    /// Attach a PASID of the vfio device to the given page table. The
+    /// kernel requires the page table attached to the device itself to be
+    /// PASID compatible, meaning it was allocated with IOMMU_HWPT_ALLOC_PASID.
+    ///
+    /// # Parameters
+    /// * `pt_id`: the IOAS or HWPT to attach the PASID to.
+    /// * `pasid`: the PASID of the vfio device to attach.
+    pub fn attach_iommufd_pt_pasid(&self, pt_id: u32, pasid: u32) -> Result<()> {
+        let mut attach_data = vfio_device_attach_iommufd_pt {
+            argsz: mem::size_of::<vfio_device_attach_iommufd_pt>() as u32,
+            flags: VFIO_DEVICE_ATTACH_PASID,
+            pt_id,
+            pasid,
+        };
+        vfio_syscall::attach_device_iommufd_pt(&self.device, &mut attach_data)?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    /// Detach a PASID of the vfio device from its current page table.
+    ///
+    /// # Parameters
+    /// * `pasid`: the PASID of the vfio device to detach.
+    pub fn detach_iommufd_pt_pasid(&self, pasid: u32) -> Result<()> {
+        let detach_data = vfio_device_detach_iommufd_pt {
+            argsz: mem::size_of::<vfio_device_detach_iommufd_pt>() as u32,
+            flags: VFIO_DEVICE_DETACH_PASID,
+            pasid,
+        };
+        vfio_syscall::detach_device_iommufd_pt(&self.device, &detach_data)?;
+
+        Ok(())
+    }
+
     /// VFIO device reset only if the device supports being reset.
     pub fn reset(&self) {
         if self.flags & VFIO_DEVICE_FLAGS_RESET != 0 {
@@ -2785,5 +2821,14 @@ mod tests {
             VfioDevice::new_from_bound_fd(device, container),
             Err(VfioError::DowncastVfioOps)
         ));
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    #[test]
+    fn test_attach_detach_iommufd_pt_pasid() {
+        let device = create_vfio_device();
+
+        device.attach_iommufd_pt_pasid(1, 2).unwrap();
+        device.detach_iommufd_pt_pasid(2).unwrap();
     }
 }

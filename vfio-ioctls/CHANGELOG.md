@@ -7,6 +7,8 @@
 - [[167]](https://github.com/rust-vmm/vfio/pull/167) Add `attach_iommufd_pt_pasid` and `detach_iommufd_pt_pasid` to
   `VfioDevice` for the PASID variants of the iommufd attach and detach
   ioctls
+- [[170]](https://github.com/rust-vmm/vfio/pull/170) Add `pci_hot_reset_info` and `pci_hot_reset_own_group` to
+  `VfioDevice` for the VFIO PCI hot reset ioctls
 
 ## Fixed
 

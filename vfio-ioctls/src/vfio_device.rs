@@ -1229,6 +1229,19 @@ pub struct DmaLoggingRange {
     pub length: u64,
 }
 
+/// A PCI device affected by a VFIO PCI hot reset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PciHotResetDevice {
+    /// VFIO group that owns the device.
+    pub group_id: u32,
+    /// PCI segment number.
+    pub segment: u16,
+    /// PCI bus number.
+    pub bus: u8,
+    /// PCI device and function encoded as in the PCI `devfn` field.
+    pub devfn: u8,
+}
+
 impl VfioDevice {
     #[cfg(not(test))]
     fn get_group_id_from_path(sysfspath: &Path) -> Result<u32> {
@@ -1480,6 +1493,89 @@ impl VfioDevice {
         if self.flags & VFIO_DEVICE_FLAGS_RESET != 0 {
             vfio_syscall::reset(self);
         }
+    }
+
+    /// Return all PCI devices affected by a hot reset of this device.
+    ///
+    /// This operation uses group IDs and is available only to devices opened
+    /// through the legacy VFIO container/group API.
+    pub fn pci_hot_reset_info(&self) -> Result<Vec<PciHotResetDevice>> {
+        if self
+            .vfio_ops
+            .as_any()
+            .downcast_ref::<VfioContainer>()
+            .is_none()
+        {
+            return Err(VfioError::PciHotResetRequiresContainer);
+        }
+        let mut probe = vfio_pci_hot_reset_info {
+            argsz: mem::size_of::<vfio_pci_hot_reset_info>() as u32,
+            ..Default::default()
+        };
+        vfio_syscall::get_pci_hot_reset_info(&self.device, &mut probe, true)?;
+
+        let count = probe.count as usize;
+        let mut buffer =
+            vec_with_array_field::<vfio_pci_hot_reset_info, vfio_pci_dependent_device>(count);
+        let info = &mut buffer[0];
+        info.argsz = (mem::size_of::<vfio_pci_hot_reset_info>()
+            + count * mem::size_of::<vfio_pci_dependent_device>()) as u32;
+        vfio_syscall::get_pci_hot_reset_info(&self.device, info, false)?;
+        if info.count as usize > count {
+            return Err(VfioError::PciHotResetInfoChanged);
+        }
+        // The kernel reports either a group ID or a cdev-only device ID in the
+        // same union, and flags say which. Container-opened devices always get
+        // group IDs, but assert it rather than rely on that invariant: reading
+        // the wrong union member would silently yield meaningless group IDs.
+        if info.flags & VFIO_PCI_HOT_RESET_FLAG_DEV_ID != 0 {
+            return Err(VfioError::PciHotResetRequiresContainer);
+        }
+
+        // SAFETY: `buffer` reserves room for `count` trailing entries and the
+        // kernel reported no more than that many entries.
+        let devices = unsafe { info.devices.as_slice(info.count as usize) };
+        Ok(devices
+            .iter()
+            .map(|device| PciHotResetDevice {
+                // SAFETY: the flags checked above confirm that the union holds
+                // `group_id` rather than the cdev-only `devid` variant.
+                group_id: unsafe { device.__bindgen_anon_1.group_id },
+                segment: device.segment,
+                bus: device.bus,
+                devfn: device.devfn,
+            })
+            .collect())
+    }
+
+    /// Perform a PCI hot reset using this device's group as proof of ownership.
+    ///
+    /// This operation is available only to devices opened through the legacy
+    /// VFIO container/group API. Callers must use [`Self::pci_hot_reset_info`]
+    /// first and ensure that every affected device belongs to this device's
+    /// group.
+    pub fn pci_hot_reset_own_group(&self) -> Result<()> {
+        let container = self
+            .vfio_ops
+            .as_any()
+            .downcast_ref::<VfioContainer>()
+            .ok_or(VfioError::PciHotResetRequiresContainer)?;
+        let sysfspath = self
+            .sysfspath
+            .as_deref()
+            .ok_or(VfioError::PciHotResetRequiresContainer)?;
+        let group_id = Self::get_group_id_from_path(sysfspath)?;
+        let group = container.get_group(group_id)?;
+
+        let mut buffer = vec_with_array_field::<vfio_pci_hot_reset, i32>(1);
+        let reset = &mut buffer[0];
+        reset.argsz = (mem::size_of::<vfio_pci_hot_reset>() + mem::size_of::<i32>()) as u32;
+        reset.count = 1;
+
+        // SAFETY: `buffer` reserves room for one trailing group fd.
+        let group_fds = unsafe { reset.group_fds.as_mut_slice(1) };
+        group_fds[0] = group.as_raw_fd();
+        vfio_syscall::pci_hot_reset(&self.device, reset)
     }
 
     /// Get information about VFIO IRQs.
@@ -2292,6 +2388,35 @@ mod tests {
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
         }
+    }
+
+    #[test]
+    fn test_pci_hot_reset_info() {
+        let device = create_vfio_device();
+        let affected = device.pci_hot_reset_info().unwrap();
+        assert_eq!(
+            affected,
+            vec![
+                PciHotResetDevice {
+                    group_id: 3,
+                    segment: 0,
+                    bus: 0x0f,
+                    devfn: 1,
+                },
+                PciHotResetDevice {
+                    group_id: 4,
+                    segment: 0,
+                    bus: 0x10,
+                    devfn: 0,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_pci_hot_reset() {
+        let device = create_vfio_device();
+        device.pci_hot_reset_own_group().unwrap();
     }
 
     #[test]

@@ -1297,7 +1297,12 @@ impl VfioDevice {
         Ok(())
     }
 
-    fn get_device_info(sysfspath: &Path, vfio_ops: Arc<dyn VfioOps>) -> Result<VfioDeviceInfo> {
+    #[cfg_attr(not(feature = "vfio_cdev"), allow(unused_variables))]
+    fn get_device_info(
+        sysfspath: &Path,
+        vfio_ops: Arc<dyn VfioOps>,
+        attach_ioas: bool,
+    ) -> Result<VfioDeviceInfo> {
         if let Some(vfio_container) = vfio_ops.as_any().downcast_ref::<VfioContainer>() {
             let group_id = Self::get_group_id_from_path(sysfspath)?;
             let group = vfio_container.get_group(group_id)?;
@@ -1316,8 +1321,11 @@ impl VfioDevice {
                 .device_set_fd(device.as_raw_fd(), true)?;
             // Bind the VFIO device to the iommufd file
             Self::bind_cdev_to_iommufd(&device, vfio_iommufd)?;
-            // Associate the vfio device to the IOAS within the bound iommufd
-            Self::attach_cdev_to_ioas(&device, vfio_iommufd)?;
+
+            if attach_ioas {
+                // Associate the vfio device to the IOAS within the bound iommufd
+                Self::attach_cdev_to_ioas(&device, vfio_iommufd)?;
+            }
 
             let dev_info = VfioDeviceInfo::get_device_info(&device)?;
             let dev_info = VfioDeviceInfo::new(device, &dev_info);
@@ -1333,8 +1341,9 @@ impl VfioDevice {
     /// # Parameters
     /// * `sysfspath`: specify the vfio device path in sys file system.
     /// * `vfio_ops`: the vfio device wrapper object that the new VFIO device object will bind to.
-    pub fn new(sysfspath: &Path, vfio_ops: Arc<dyn VfioOps>) -> Result<Self> {
-        let device_info = Self::get_device_info(sysfspath, vfio_ops.clone())?;
+    /// * `attach_ioas`: whether to attach the device to iommufd's IOAS
+    pub fn new(sysfspath: &Path, vfio_ops: Arc<dyn VfioOps>, attach_ioas: bool) -> Result<Self> {
+        let device_info = Self::get_device_info(sysfspath, vfio_ops.clone(), attach_ioas)?;
         let regions = device_info.get_regions()?;
         let irqs = device_info.get_irqs()?;
 
@@ -1400,9 +1409,14 @@ impl VfioDevice {
     /// * `device`: an opened vfio cdev file whose ownership is transferred
     ///   into the returned `VfioDevice`.
     /// * `vfio_iommufd`: the iommufd wrapper to bind the cdev to.
+    /// * `attach_ioas`: whether to attach the device to iommufd's IOAS
     #[cfg(feature = "vfio_cdev")]
-    pub fn new_from_fd(device: File, vfio_iommufd: Arc<VfioIommufd>) -> Result<Self> {
-        Self::from_cdev(device, vfio_iommufd, true, true)
+    pub fn new_from_fd(
+        device: File,
+        vfio_iommufd: Arc<VfioIommufd>,
+        attach_ioas: bool,
+    ) -> Result<Self> {
+        Self::from_cdev(device, vfio_iommufd, true, attach_ioas)
     }
 
     /// Construct a `VfioDevice` from a cdev file that is already
@@ -1417,9 +1431,14 @@ impl VfioDevice {
     /// * `device`: an opened, already-bound vfio cdev file whose
     ///   ownership is transferred into the returned `VfioDevice`.
     /// * `vfio_iommufd`: must wrap the iommufd the cdev was bound against.
+    /// * `attach_ioas`: whether to attach the device to iommufd's IOAS
     #[cfg(feature = "vfio_cdev")]
-    pub fn new_from_bound_fd(device: File, vfio_iommufd: Arc<VfioIommufd>) -> Result<Self> {
-        Self::from_cdev(device, vfio_iommufd, false, true)
+    pub fn new_from_bound_fd(
+        device: File,
+        vfio_iommufd: Arc<VfioIommufd>,
+        attach_ioas: bool,
+    ) -> Result<Self> {
+        Self::from_cdev(device, vfio_iommufd, false, attach_ioas)
     }
 
     #[cfg(feature = "vfio_cdev")]
@@ -2623,7 +2642,7 @@ mod tests {
     fn test_vfio_device() {
         let tmp_file = TempFile::new().unwrap();
         let container = Arc::new(create_vfio_container());
-        let device = VfioDevice::new(tmp_file.as_path(), container.clone()).unwrap();
+        let device = VfioDevice::new(tmp_file.as_path(), container.clone(), true).unwrap();
 
         assert!(device.as_raw_fd() > 0);
         assert_eq!(device.max_interrupts(), 2048);

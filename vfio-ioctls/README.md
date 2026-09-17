@@ -56,7 +56,7 @@ fn create_vfio_device() {
   // TODO: change to your device's path
   let device_path = "/sys/bus/pci/devices/00:03.0";
   let vfio_container = Arc::new(VfioContainer::new(()).unwrap());
-  let vfio_dev = VfioDevice::new(&Path::new(device_path), vfio_container.clone()).unwrap();
+  let vfio_dev = VfioDevice::new(&Path::new(device_path), vfio_container.clone(), true).unwrap();
   let irqs = vfio_dev.max_interrupts();
 
   assert!(irqs > 0);

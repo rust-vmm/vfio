@@ -159,6 +159,37 @@ pub(crate) mod vfio_syscall {
         }
     }
 
+    pub(crate) fn get_pci_hot_reset_info(
+        device: &File,
+        info: &mut vfio_pci_hot_reset_info,
+        allow_enospc: bool,
+    ) -> Result<()> {
+        // SAFETY: `info.argsz` describes the caller-owned buffer and the ioctl
+        // number is defined by the VFIO UAPI.
+        let ret = unsafe { ioctl_with_mut_ref(device, VFIO_DEVICE_GET_PCI_HOT_RESET_INFO(), info) };
+        if ret < 0 {
+            let error = SysError::last();
+            if allow_enospc && error.errno() == libc::ENOSPC {
+                Ok(())
+            } else {
+                Err(VfioError::PciHotResetInfo(error))
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn pci_hot_reset(device: &File, reset: &vfio_pci_hot_reset) -> Result<()> {
+        // SAFETY: `reset.argsz` describes the caller-owned buffer and every fd
+        // in the trailing array comes from a live `VfioGroup`.
+        let ret = unsafe { ioctl_with_ref(device, VFIO_DEVICE_PCI_HOT_RESET(), reset) };
+        if ret < 0 {
+            Err(VfioError::PciHotReset(SysError::last()))
+        } else {
+            Ok(())
+        }
+    }
+
     pub(crate) fn set_group_container(group: &VfioGroup, container: &VfioContainer) -> Result<()> {
         let container_raw_fd = container.as_raw_fd();
         // SAFETY: we are the owner of group and container_raw_fd which are valid value,
@@ -414,6 +445,38 @@ pub(crate) mod vfio_syscall {
         let device = File::open(tmp_file.as_path()).unwrap();
 
         Ok(device)
+    }
+
+    pub(crate) fn get_pci_hot_reset_info(
+        _device: &File,
+        info: &mut vfio_pci_hot_reset_info,
+        probing: bool,
+    ) -> Result<()> {
+        if probing {
+            info.count = 2;
+            return Ok(());
+        }
+
+        info.count = 2;
+        // SAFETY: unit-test callers allocate two trailing entries.
+        let devices = unsafe { info.devices.as_mut_slice(2) };
+        devices[0].__bindgen_anon_1.group_id = 3;
+        devices[0].segment = 0;
+        devices[0].bus = 0x0f;
+        devices[0].devfn = 1;
+        devices[1].__bindgen_anon_1.group_id = 4;
+        devices[1].segment = 0;
+        devices[1].bus = 0x10;
+        devices[1].devfn = 0;
+        Ok(())
+    }
+
+    pub(crate) fn pci_hot_reset(_device: &File, reset: &vfio_pci_hot_reset) -> Result<()> {
+        if reset.count == 0 {
+            Err(VfioError::PciHotReset(SysError::new(libc::EINVAL)))
+        } else {
+            Ok(())
+        }
     }
 
     pub(crate) fn set_group_container(group: &VfioGroup, container: &VfioContainer) -> Result<()> {

@@ -68,8 +68,8 @@ mod vfio_device;
 mod vfio_ioctls;
 
 pub use vfio_device::{
-    DmaLoggingRange, PrecopyInfo, VfioContainer, VfioDevice, VfioDeviceFd, VfioGroup, VfioIrq,
-    VfioOps, VfioRegion, VfioRegionInfoCap, VfioRegionInfoCapNvlink2Lnkspd,
+    DmaLoggingRange, PciHotResetDevice, PrecopyInfo, VfioContainer, VfioDevice, VfioDeviceFd,
+    VfioGroup, VfioIrq, VfioOps, VfioRegion, VfioRegionInfoCap, VfioRegionInfoCapNvlink2Lnkspd,
     VfioRegionInfoCapNvlink2Ssatgt, VfioRegionInfoCapSparseMmap, VfioRegionInfoCapType,
     VfioRegionSparseMmapArea,
 };
@@ -105,6 +105,14 @@ pub enum VfioError {
     ContainerSetIOMMU(#[source] SysError),
     #[error("failed to get vfio device fd: {0}")]
     GroupGetDeviceFD(#[source] SysError),
+    #[error("failed to get PCI hot reset information: {0}")]
+    PciHotResetInfo(#[source] SysError),
+    #[error("failed to perform PCI hot reset: {0}")]
+    PciHotReset(#[source] SysError),
+    #[error("PCI hot reset information changed while it was being queried")]
+    PciHotResetInfoChanged,
+    #[error("PCI hot reset through group fds requires the VFIO container/group API")]
+    PciHotResetRequiresContainer,
     #[error("failed to set vfio device's attribute: {0}")]
     SetDeviceAttr(#[source] SysError),
     #[error("failed to get vfio device's info: {0}")]

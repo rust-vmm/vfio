@@ -2,11 +2,15 @@
 
 ## Changed
 
-- Bump `vfio-bindings` to 0.6.3.
-
 ## Added
 
 ## Fixed
+
+# [v0.1.6]
+
+## Changed
+
+- Bump `vfio-bindings` to 0.6.3.
 
 # [v0.1.5]
 

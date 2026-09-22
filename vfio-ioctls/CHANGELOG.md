@@ -4,11 +4,14 @@
 
 ## Added
 
-- [[167]](https://github.com/rust-vmm/vfio/pull/167) Add `attach_iommufd_pt_pasid` and `detach_iommufd_pt_pasid` to
-  `VfioDevice` for the PASID variants of the iommufd attach and detach
-  ioctls
-
 ## Fixed
+
+# [v0.9.1]
+
+## Changed
+
+- Bump `vfio-bindings` to 0.6.3, so that the iommufd attach and detach
+  structs carry the PASID field and the PASID flags from Linux v6.15.
 
 # [v0.9.0]
 
@@ -36,6 +39,9 @@
   translation without depending on this crate.
 - Add `VfioDevice::iommufd_dev_id`, the id the kernel assigned when the device
   was bound, or `None` for legacy container/group devices.
+- [[167]](https://github.com/rust-vmm/vfio/pull/167) Add `attach_iommufd_pt_pasid`
+  and `detach_iommufd_pt_pasid` to `VfioDevice` for the PASID variants of the
+  iommufd attach and detach ioctls.
 
 ## Fixed
 

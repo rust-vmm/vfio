@@ -6,6 +6,8 @@
 
 ## Fixed
 
+- [[172]](https://github.com/rust-vmm/vfio/pull/172) Fail region info rather than report no sparse mmap areas
+
 # [v0.1.6]
 
 ## Changed

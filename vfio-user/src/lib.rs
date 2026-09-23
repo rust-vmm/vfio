@@ -313,6 +313,50 @@ pub enum Error {
     UnexpectedNoReply(Command),
 }
 
+/// The header every capability of a region begins with.
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct CapabilityHeader {
+    id: u16,
+    version: u16,
+    next: u32,
+}
+
+/// Fixed-size header at the start of a sparse mmap capability.
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct SparseMmapHeader {
+    nr_areas: u32,
+    reserved: u32,
+}
+
+// SAFETY: data structure only contain a series of integers
+unsafe impl ByteValued for CapabilityHeader {}
+// SAFETY: data structure only contain a series of integers
+unsafe impl ByteValued for SparseMmapHeader {}
+
+/// Error encountered while walking a region's capability list.
+#[derive(Debug, Error)]
+enum CapabilityError {
+    #[error("offset {0} does not advance")]
+    NotAdvancing(usize),
+    #[error("offset {offset} is outside the {len} bytes of capability data")]
+    Outside { offset: usize, len: usize },
+    #[error("capability at offset {offset} is truncated")]
+    Truncated {
+        offset: usize,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("sparse mmap capability at offset {offset} claims {count} areas, which do not fit")]
+    AreaCount {
+        offset: usize,
+        count: usize,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
 impl Client {
     pub fn new(path: &Path) -> Result<Client, Error> {
         let stream = UnixStream::connect(path).map_err(Error::Connect)?;
@@ -599,7 +643,9 @@ impl Client {
                 .read_exact(cap_data.as_mut_slice())
                 .map_err(Error::StreamRead)?;
 
-            let sparse_areas = Self::parse_region_caps(&cap_data, &reply.region_info)?;
+            let sparse_areas = Self::parse_region_caps(&cap_data, &reply.region_info)
+                .inspect_err(|error| warn!("Region {index}: {error}"))
+                .map_err(|_| Error::InvalidInput)?;
 
             Ok((reply.region_info, fd, sparse_areas))
         } else {
@@ -607,70 +653,69 @@ impl Client {
         }
     }
 
+    /// Collects the mmap-able areas of every sparse mmap capability in the
+    /// list that follows `vfio_region_info` in a `DEVICE_GET_REGION_INFO`
+    /// reply.
+    ///
+    /// Offsets in the list are relative to the start of the
+    /// `vfio_region_info` structure, which `cap_data` does not include.
     fn parse_region_caps(
         cap_data: &[u8],
         region_info: &vfio_region_info,
-    ) -> Result<Vec<vfio_region_sparse_mmap_area>, Error> {
-        let mut sparse_areas: Vec<vfio_region_sparse_mmap_area> = Vec::new();
+    ) -> Result<Vec<vfio_region_sparse_mmap_area>, CapabilityError> {
+        let mut sparse_areas = Vec::new();
+        let mut next = region_info.cap_offset as usize;
+        let mut previous = 0;
 
-        let cap_size = cap_data.len() as u32;
-        let cap_header_size = size_of::<vfio_info_cap_header>() as u32;
-        let mmap_cap_size = size_of::<vfio_region_info_cap_sparse_mmap>() as u32;
-        let mmap_area_size = size_of::<vfio_region_sparse_mmap_area>() as u32;
+        while next != 0 {
+            let offset = next;
+            if next <= previous {
+                return Err(CapabilityError::NotAdvancing(offset));
+            }
+            previous = next;
 
-        let cap_data_ptr = cap_data.as_ptr();
-        let mut region_info_offset = region_info.cap_offset;
-        while region_info_offset != 0 {
-            // calculate the offset from the begining of the cap_data based on the offset
-            // that is relative to the begining of the VFIO region info structure
-            let cap_offset = region_info_offset - size_of::<vfio_region_info>() as u32;
-            if cap_offset + cap_header_size > cap_size {
+            let mut capability = next
+                .checked_sub(size_of::<vfio_region_info>())
+                .and_then(|from| cap_data.get(from..))
+                .ok_or(CapabilityError::Outside {
+                    offset,
+                    len: cap_data.len(),
+                })?;
+
+            let header = CapabilityHeader::read_exact_from(&mut capability)
+                .map_err(|source| CapabilityError::Truncated { offset, source })?;
+            next = header.next as usize;
+
+            if u32::from(header.id) != VFIO_REGION_INFO_CAP_SPARSE_MMAP {
                 warn!(
-                    "Unexpected end of cap data: 'cap_offset + cap_header_size > cap_size' \
-                cap_offset = {cap_offset}, cap_header_size = {cap_header_size}, cap_size = {cap_size}"
+                    "Ignoring unsupported vfio region capability (id = '{}')",
+                    header.id
                 );
-                break;
+                continue;
             }
 
-            // SAFETY: `cap_data_ptr` is valid and the `cap_offset` is checked above
-            let cap_ptr = unsafe { cap_data_ptr.offset(cap_offset as isize) };
-            // SAFETY: `cap_ptr` is valid
-            let cap_header = unsafe { &*(cap_ptr as *const vfio_info_cap_header) };
-            match cap_header.id as u32 {
-                VFIO_REGION_INFO_CAP_SPARSE_MMAP => {
-                    if cap_offset + mmap_cap_size > cap_size {
-                        warn!(
-                            "Unexpected end of cap data: 'cap_offset + mmap_cap_size > cap_size' \
-                        cap_offset = {cap_offset}, mmap_cap_size = {mmap_cap_size}, cap_size = {cap_size}"
-                        );
-                        break;
-                    }
-                    // SAFETY: `cap_ptr` is valid and its size is also checked above
-                    let sparse_mmap = unsafe {
-                        &*(cap_ptr as *mut u8 as *const vfio_region_info_cap_sparse_mmap)
-                    };
+            let sparse = SparseMmapHeader::read_exact_from(&mut capability)
+                .map_err(|source| CapabilityError::Truncated { offset, source })?;
+            let count = sparse.nr_areas as usize;
 
-                    let area_num = sparse_mmap.nr_areas;
-                    if cap_offset + mmap_cap_size + area_num * mmap_area_size > cap_size {
-                        warn!("Unexpected end of cap data: 'cap_offset + mmap_cap_size + area_num * mmap_area_size > cap_size' \
-                        cap_offset = {cap_offset}, mmap_cap_size = {mmap_area_size}, area_num = {area_num}, mmap_area_size = {mmap_area_size}, cap_size = {cap_size}");
-                        break;
-                    }
-                    let areas =
-                        // SAFETY: `sparse_mmap` is valid and its size is also checked above
-                        unsafe { sparse_mmap.areas.as_slice(sparse_mmap.nr_areas as usize) };
-                    for area in areas.iter() {
-                        sparse_areas.push(*area);
-                    }
-                }
-                _ => {
-                    warn!(
-                        "Ignoring unsupported vfio region capability (id = '{}')",
-                        cap_header.id
-                    );
-                }
+            for _ in 0..count {
+                sparse_areas.push(vfio_region_sparse_mmap_area {
+                    offset: u64::read_exact_from(&mut capability).map_err(|source| {
+                        CapabilityError::AreaCount {
+                            offset,
+                            count,
+                            source,
+                        }
+                    })?,
+                    size: u64::read_exact_from(&mut capability).map_err(|source| {
+                        CapabilityError::AreaCount {
+                            offset,
+                            count,
+                            source,
+                        }
+                    })?,
+                });
             }
-            region_info_offset = cap_header.next;
         }
 
         Ok(sparse_areas)
@@ -1139,31 +1184,24 @@ impl Server {
 
                 let mut cap_data: Vec<u8> = Vec::new();
                 if !sparse_areas.is_empty() {
-                    let cap_header = vfio_info_cap_header {
+                    // The structures the client reads the list back through,
+                    // in the order it reads them.
+                    let header = CapabilityHeader {
                         id: VFIO_REGION_INFO_CAP_SPARSE_MMAP as u16,
                         version: 1,
                         next: 0,
                     };
-                    // SAFETY: vfio_info_cap_header is repr(C) and cap_header
-                    // is correctly initialized.
-                    cap_data.extend_from_slice(unsafe {
-                        std::slice::from_raw_parts(
-                            &cap_header as *const vfio_info_cap_header as *const u8,
-                            size_of::<vfio_info_cap_header>(),
-                        )
-                    });
-                    cap_data.extend_from_slice(&(sparse_areas.len() as u32).to_le_bytes());
-                    cap_data.extend_from_slice(&0u32.to_le_bytes());
+                    cap_data.extend_from_slice(header.as_slice());
+
+                    let sparse = SparseMmapHeader {
+                        nr_areas: sparse_areas.len() as u32,
+                        reserved: 0,
+                    };
+                    cap_data.extend_from_slice(sparse.as_slice());
+
                     for sparse_area in sparse_areas {
-                        // SAFETY: vfio_region_sparse_mmap_area is repr(C) and
-                        // sparse_area.area is correctly initialized.
-                        cap_data.extend_from_slice(unsafe {
-                            std::slice::from_raw_parts(
-                                &sparse_area.area as *const vfio_region_sparse_mmap_area
-                                    as *const u8,
-                                size_of::<vfio_region_sparse_mmap_area>(),
-                            )
-                        });
+                        cap_data.extend_from_slice(sparse_area.area.offset.as_slice());
+                        cap_data.extend_from_slice(sparse_area.area.size.as_slice());
                     }
                 }
 
@@ -1460,91 +1498,135 @@ impl Drop for Server {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::size_of;
 
-    fn build_sparse_cap_data(areas: &[vfio_region_sparse_mmap_area]) -> Vec<u8> {
-        let mut cap_data: Vec<u8> = Vec::new();
-        let cap_header = vfio_info_cap_header {
-            id: VFIO_REGION_INFO_CAP_SPARSE_MMAP as u16,
-            version: 1,
-            next: 0,
-        };
-        // SAFETY: `cap_header` is a valid, initialized repr(C) struct.
-        cap_data.extend_from_slice(unsafe {
-            std::slice::from_raw_parts(
-                &cap_header as *const vfio_info_cap_header as *const u8,
-                size_of::<vfio_info_cap_header>(),
-            )
-        });
-        cap_data.extend_from_slice(&(areas.len() as u32).to_le_bytes());
-        cap_data.extend_from_slice(&0u32.to_le_bytes());
-        for area in areas {
-            // SAFETY: `area` is a valid, initialized repr(C) struct.
-            cap_data.extend_from_slice(unsafe {
-                std::slice::from_raw_parts(
-                    area as *const vfio_region_sparse_mmap_area as *const u8,
-                    size_of::<vfio_region_sparse_mmap_area>(),
-                )
-            });
+    mod capability {
+        use super::*;
+
+        /// Offsets in a capability list are relative to the region info
+        /// structure.
+        const FIRST_CAPABILITY: u32 = size_of::<vfio_region_info>() as u32;
+
+        fn sparse_cap(next: u32, nr_areas: u32, areas: &[(u64, u64)]) -> Vec<u8> {
+            let header = CapabilityHeader {
+                id: VFIO_REGION_INFO_CAP_SPARSE_MMAP as u16,
+                version: 1,
+                next,
+            };
+            let sparse = SparseMmapHeader {
+                nr_areas,
+                reserved: 0,
+            };
+
+            let mut data = Vec::new();
+            data.extend_from_slice(header.as_slice());
+            data.extend_from_slice(sparse.as_slice());
+            for (offset, size) in areas {
+                data.extend_from_slice(offset.as_slice());
+                data.extend_from_slice(size.as_slice());
+            }
+            data
         }
-        cap_data
-    }
 
-    #[test]
-    fn test_parse_sparse_mmap_caps() {
-        let areas = vec![
-            vfio_region_sparse_mmap_area {
-                offset: 0x0,
-                size: 0x1000,
-            },
-            vfio_region_sparse_mmap_area {
-                offset: 0x2000,
-                size: 0x3000,
-            },
-        ];
+        fn area(offset: u64, size: u64) -> vfio_region_sparse_mmap_area {
+            vfio_region_sparse_mmap_area { offset, size }
+        }
 
-        let cap_data = build_sparse_cap_data(&areas);
+        fn walk(
+            cap_offset: u32,
+            cap_data: &[u8],
+        ) -> Result<Vec<vfio_region_sparse_mmap_area>, CapabilityError> {
+            let region_info = vfio_region_info {
+                argsz: (size_of::<vfio_region_info>() + cap_data.len()) as u32,
+                flags: VFIO_REGION_INFO_FLAG_CAPS,
+                cap_offset,
+                ..Default::default()
+            };
+            Client::parse_region_caps(cap_data, &region_info)
+        }
 
-        let region_info = vfio_region_info {
-            argsz: (size_of::<vfio_region_info>() + cap_data.len()) as u32,
-            flags: VFIO_REGION_INFO_FLAG_CAPS,
-            cap_offset: size_of::<vfio_region_info>() as u32,
-            ..Default::default()
-        };
+        #[test]
+        fn absent_list_collects_none() {
+            assert_eq!(walk(0, &[]).ok(), Some(vec![]));
+        }
 
-        let parsed = Client::parse_region_caps(&cap_data, &region_info).unwrap();
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].offset, 0x0);
-        assert_eq!(parsed[0].size, 0x1000);
-        assert_eq!(parsed[1].offset, 0x2000);
-        assert_eq!(parsed[1].size, 0x3000);
-    }
+        #[test]
+        fn unsupported_id_is_skipped() {
+            let mut cap_data = sparse_cap(0, 1, &[(0x0, 0x1000)]);
+            cap_data[0..2].copy_from_slice(&0xffffu16.to_ne_bytes());
 
-    #[test]
-    fn test_parse_empty_sparse_mmap_caps() {
-        let cap_data = build_sparse_cap_data(&[]);
+            assert_eq!(walk(FIRST_CAPABILITY, &cap_data).ok(), Some(vec![]));
+        }
 
-        let region_info = vfio_region_info {
-            argsz: (size_of::<vfio_region_info>() + cap_data.len()) as u32,
-            flags: VFIO_REGION_INFO_FLAG_CAPS,
-            cap_offset: size_of::<vfio_region_info>() as u32,
-            ..Default::default()
-        };
+        #[test]
+        fn offset_inside_region_info_fails() {
+            let cap_data = sparse_cap(0, 1, &[(0x0, 0x1000)]);
 
-        let parsed = Client::parse_region_caps(&cap_data, &region_info).unwrap();
-        assert!(parsed.is_empty());
-    }
+            assert!(matches!(
+                walk(FIRST_CAPABILITY - 4, &cap_data),
+                Err(CapabilityError::Outside { .. })
+            ));
+        }
 
-    #[test]
-    fn test_no_caps_returns_empty() {
-        let region_info = vfio_region_info {
-            argsz: size_of::<vfio_region_info>() as u32,
-            flags: 0,
-            cap_offset: 0,
-            ..Default::default()
-        };
+        #[test]
+        fn offset_past_list_fails() {
+            let cap_data = sparse_cap(0, 1, &[(0x0, 0x1000)]);
+            let past = FIRST_CAPABILITY + cap_data.len() as u32;
 
-        let parsed = Client::parse_region_caps(&[], &region_info).unwrap();
-        assert!(parsed.is_empty());
+            assert!(matches!(
+                walk(past, &cap_data),
+                Err(CapabilityError::Truncated { .. })
+            ));
+        }
+
+        #[test]
+        fn next_pointing_at_itself_fails() {
+            let cap_data = sparse_cap(FIRST_CAPABILITY, 1, &[(0x0, 0x1000)]);
+
+            assert!(matches!(
+                walk(FIRST_CAPABILITY, &cap_data),
+                Err(CapabilityError::NotAdvancing(_))
+            ));
+        }
+
+        mod sparse {
+            use super::*;
+
+            #[test]
+            fn areas_keep_wire_order() {
+                let cap_data = sparse_cap(0, 2, &[(0x0, 0x1000), (0x2000, 0x3000)]);
+
+                assert_eq!(
+                    walk(FIRST_CAPABILITY, &cap_data).ok(),
+                    Some(vec![area(0x0, 0x1000), area(0x2000, 0x3000)])
+                );
+            }
+
+            #[test]
+            fn count_of_zero_collects_none() {
+                let cap_data = sparse_cap(0, 0, &[]);
+
+                assert_eq!(walk(FIRST_CAPABILITY, &cap_data).ok(), Some(vec![]));
+            }
+
+            #[test]
+            fn count_beyond_list_fails() {
+                let cap_data = sparse_cap(0, u32::MAX, &[(0x0, 0x1000)]);
+
+                assert!(matches!(
+                    walk(FIRST_CAPABILITY, &cap_data),
+                    Err(CapabilityError::AreaCount { .. })
+                ));
+            }
+
+            #[test]
+            fn truncated_areas_fail() {
+                let cap_data = sparse_cap(0, 2, &[(0x0, 0x1000)]);
+
+                assert!(matches!(
+                    walk(FIRST_CAPABILITY, &cap_data),
+                    Err(CapabilityError::AreaCount { .. })
+                ));
+            }
+        }
     }
 }

@@ -6,9 +6,9 @@
 use bitflags::bitflags;
 use libc::{c_void, iovec, EINVAL};
 use libc::{sysconf, _SC_PAGESIZE};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::fs::File;
-use std::io::{IoSlice, Read, Write};
+use std::io::{self, IoSlice, Read, Write};
 use std::mem::size_of;
 use std::num::Wrapping;
 use std::os::fd::OwnedFd;
@@ -90,22 +90,10 @@ struct MigrationCapabilities {
     pgsize: u32,
 }
 
-const fn default_max_msg_fds() -> u32 {
-    1
-}
-
-const fn default_max_data_xfer_size() -> u32 {
-    1048576
-}
-
 #[inline(always)]
 fn pagesize() -> u32 {
     // SAFETY: sysconf
     unsafe { sysconf(_SC_PAGESIZE) as u32 }
-}
-
-fn default_migration_capabilities() -> MigrationCapabilities {
-    MigrationCapabilities { pgsize: pagesize() }
 }
 
 bitflags! {
@@ -176,6 +164,15 @@ struct RegionAccess {
     count: u32,
 }
 
+impl RegionAccess {
+    /// Whether the access stays inside a region of `size` bytes and within
+    /// the `max_data_xfer_size` the server advertises.
+    const fn fits(&self, size: u64) -> bool {
+        self.count <= Capabilities::DEFAULT_MAX_DATA_XFER_SIZE
+            && matches!(self.offset.checked_add(self.count as u64), Some(end) if end <= size)
+    }
+}
+
 #[repr(C)]
 #[derive(Default, Clone, Copy, Debug)]
 struct GetIrqInfo {
@@ -225,28 +222,62 @@ unsafe impl ByteValued for SetIrqs {}
 unsafe impl ByteValued for DeviceReset {}
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(default)]
 struct Capabilities {
-    #[serde(default = "default_max_msg_fds")]
     max_msg_fds: u32,
-    #[serde(default = "default_max_data_xfer_size")]
     max_data_xfer_size: u32,
-    #[serde(default = "default_migration_capabilities")]
     migration: MigrationCapabilities,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
-struct CapabilitiesData {
-    capabilities: Capabilities,
+impl Capabilities {
+    const DEFAULT_MAX_DATA_XFER_SIZE: u32 = 1024 * 1024; // 1 MiB
+
+    /// Reads the capabilities in the version data of a `VERSION` message.
+    fn read(stream: &mut impl Read, message_size: u32) -> Result<Self, Error> {
+        let len = message_size
+            .checked_sub(size_of::<Version>() as u32)
+            .ok_or(Error::InvalidInput)?;
+
+        if len == 0 {
+            return Ok(Self::default());
+        }
+
+        let mut payload = Vec::new();
+        copy_exact(stream, len, &mut payload)?;
+        // Exactly one NUL, at the end.
+        let payload = CStr::from_bytes_with_nul(&payload).map_err(|_| Error::InvalidInput)?;
+
+        serde_json::from_slice::<CapabilitiesData>(payload.to_bytes())
+            .map(|data| data.capabilities)
+            .map_err(Error::DeserializeCapabilites)
+    }
 }
 
 impl Default for Capabilities {
     fn default() -> Self {
         Self {
-            max_msg_fds: default_max_msg_fds(),
-            max_data_xfer_size: default_max_data_xfer_size(),
-            migration: default_migration_capabilities(),
+            max_msg_fds: 1,
+            max_data_xfer_size: Self::DEFAULT_MAX_DATA_XFER_SIZE,
+            migration: MigrationCapabilities { pgsize: pagesize() },
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
+struct CapabilitiesData {
+    capabilities: Capabilities,
+}
+
+/// Copies exactly `len` bytes.
+fn copy_exact(from: &mut impl Read, len: u32, to: &mut impl Write) -> Result<(), Error> {
+    let mut from = from.take(len.into());
+    io::copy(&mut from, to).map_err(Error::StreamRead)?;
+    if from.limit() > 0 {
+        return Err(Error::StreamRead(io::ErrorKind::UnexpectedEof.into()));
+    }
+
+    Ok(())
 }
 
 pub struct Client {
@@ -376,19 +407,11 @@ impl Client {
 
         debug!("Reply: {server_version:?}");
 
-        let mut server_version_data =
-            vec![0; server_version.header.message_size as usize - size_of::<Version>()];
-        self.stream
-            .read_exact(server_version_data.as_mut_slice())
-            .map_err(Error::StreamRead)?;
-
-        let server_caps: CapabilitiesData =
-            serde_json::from_slice(&server_version_data[0..server_version_data.len() - 1])
-                .map_err(Error::DeserializeCapabilites)?;
+        let server_caps = Capabilities::read(&mut self.stream, server_version.header.message_size)?;
 
         debug!(
             "Received server version information: major = {} minor = {} capabilities = {:?}",
-            server_version.major, server_version.minor, server_caps.capabilities
+            server_version.major, server_version.minor, server_caps
         );
 
         Ok(())
@@ -589,15 +612,19 @@ impl Client {
                 .map_err(Error::ReceiveWithFd)?;
             debug!("Reply: {reply:?}");
 
-            let cap_size = reply.region_info.argsz - std::mem::size_of::<vfio_region_info>() as u32;
-            assert_eq!(
-                cap_size,
-                reply.header.message_size - size_of::<DeviceGetRegionInfo>() as u32
-            );
-            let mut cap_data = vec![0; cap_size as usize];
-            self.stream
-                .read_exact(cap_data.as_mut_slice())
-                .map_err(Error::StreamRead)?;
+            let cap_size = reply
+                .header
+                .message_size
+                // message_size = header + region info + capability data
+                .checked_sub(size_of::<DeviceGetRegionInfo>() as u32)
+                // argsz = region info + capability data
+                .filter(|&size| {
+                    size_of::<vfio_region_info>() as u32 + size == reply.region_info.argsz
+                })
+                .ok_or(Error::InvalidInput)?;
+
+            let mut cap_data = Vec::new();
+            copy_exact(&mut self.stream, cap_size, &mut cap_data)?;
 
             let sparse_areas = Self::parse_region_caps(&cap_data, &reply.region_info)?;
 
@@ -676,6 +703,16 @@ impl Client {
         Ok(sparse_areas)
     }
 
+    /// Reads `data.len()` bytes at `offset` in `region`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Backend`] if the server refuses the read, with its errno or
+    ///   [`io::ErrorKind::Other`] when it gives none.
+    /// - [`Error::InvalidInput`] if the reply is to another message, or its
+    ///   `count` or data length != `data.len()`.
+    /// - [`Error::StreamRead`] or [`Error::StreamWrite`] if the connection
+    ///   fails.
     pub fn region_read(&mut self, region: u32, offset: u64, data: &mut [u8]) -> Result<(), Error> {
         let region_read = RegionAccess {
             header: Header {
@@ -695,15 +732,22 @@ impl Client {
             .write_all(region_read.as_slice())
             .map_err(Error::StreamWrite)?;
 
-        let mut reply = RegionAccess::default();
-        self.stream
-            .read_exact(reply.as_mut_slice())
-            .map_err(Error::StreamRead)?;
-        debug!("Reply: {reply:?}");
+        self.read_region_reply(&region_read)?;
         self.stream.read_exact(data).map_err(Error::StreamRead)?;
+
         Ok(())
     }
 
+    /// Writes `data` at `offset` in region `region` on the server.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Backend`] if the server refuses the write, with its errno or
+    ///   [`io::ErrorKind::Other`] when it gives none.
+    /// - [`Error::InvalidInput`] if the reply is to another message, its
+    ///   `count` != `data.len()` or it carries data.
+    /// - [`Error::StreamRead`] or [`Error::StreamWrite`] if the connection
+    ///   fails.
     pub fn region_write(&mut self, region: u32, offset: u64, data: &[u8]) -> Result<(), Error> {
         let region_write = RegionAccess {
             header: Header {
@@ -728,11 +772,74 @@ impl Client {
             .write_vectored(&bufs)
             .map_err(Error::StreamWrite)?;
 
+        self.read_region_reply(&region_write)
+    }
+
+    fn read_region_reply(&mut self, request: &RegionAccess) -> Result<(), Error> {
         let mut reply = RegionAccess::default();
         self.stream
-            .read_exact(reply.as_mut_slice())
+            .read_exact(reply.header.as_mut_slice())
+            .map_err(Error::StreamRead)?;
+        let rest = reply
+            .header
+            .message_size
+            .saturating_sub(size_of::<Header>() as u32);
+
+        if reply.header.message_id != request.header.message_id
+            || reply.header.command != request.header.command
+        {
+            warn!(
+                "Reply (id {}, command {}) != request (id {}, command {})",
+                reply.header.message_id,
+                reply.header.command,
+                request.header.message_id,
+                request.header.command
+            );
+            copy_exact(&mut self.stream, rest, &mut io::sink())?;
+            return Err(Error::InvalidInput);
+        }
+
+        if reply.header.flags & HeaderFlags::Error as u32 != 0 {
+            copy_exact(&mut self.stream, rest, &mut io::sink())?;
+            // The errno is optional: zero gives none.
+            let error = match reply.header.error {
+                0 => io::ErrorKind::Other.into(),
+                errno => io::Error::from_raw_os_error(errno.cast_signed()),
+            };
+            return Err(Error::Backend(error));
+        }
+
+        // A read reply carries the bytes read, a write reply none.
+        let data_size = match Command::n(request.header.command) {
+            Some(Command::RegionRead) => request.count,
+            Some(Command::RegionWrite) => 0,
+            // Only region_read and region_write call this.
+            command => unreachable!("region reply to {command:?}"),
+        };
+        let message_size = reply.header.message_size;
+        if message_size.checked_sub(size_of::<RegionAccess>() as u32) != Some(data_size) {
+            warn!(
+                "Reply size {message_size} != {} + {data_size} data bytes",
+                size_of::<RegionAccess>()
+            );
+            copy_exact(&mut self.stream, rest, &mut io::sink())?;
+            return Err(Error::InvalidInput);
+        }
+
+        self.stream
+            .read_exact(&mut reply.as_mut_slice()[size_of::<Header>()..])
             .map_err(Error::StreamRead)?;
         debug!("Reply: {reply:?}");
+
+        if reply.count != request.count {
+            warn!(
+                "Reply count {} != request count {}",
+                reply.count, request.count
+            );
+            copy_exact(&mut self.stream, data_size, &mut io::sink())?;
+            return Err(Error::InvalidInput);
+        }
+
         Ok(())
     }
 
@@ -922,6 +1029,12 @@ impl Server {
         }
     }
 
+    fn access_allowed(&self, access: &RegionAccess) -> bool {
+        self.regions
+            .get(access.region as usize)
+            .is_some_and(|region| access.fits(region.region_info.size))
+    }
+
     fn handle_command(
         &self,
         backend: &mut dyn ServerBackend,
@@ -952,22 +1065,11 @@ impl Server {
                     .read_exact(&mut client_version.as_mut_slice()[size_of::<Header>()..])
                     .map_err(Error::StreamRead)?;
 
-                let mut raw_version_data =
-                    vec![0; header.message_size as usize - size_of::<Version>()];
-                stream
-                    .read_exact(&mut raw_version_data)
-                    .map_err(Error::StreamRead)?;
-                let client_version_data = CString::from_vec_with_nul(raw_version_data)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned();
-                let client_capabilities: CapabilitiesData =
-                    serde_json::from_str(&client_version_data)
-                        .map_err(Error::DeserializeCapabilites)?;
+                let client_capabilities = Capabilities::read(stream, header.message_size)?;
 
                 info!(
                     "Received client version: major = {} minor = {} capabilities = {:?}",
-                    client_version.major, client_version.minor, client_capabilities.capabilities,
+                    client_version.major, client_version.minor, client_capabilities,
                 );
 
                 let server_capabilities = CapabilitiesData::default();
@@ -1300,7 +1402,7 @@ impl Server {
 
                 let (region, offset, count) = (cmd.region, cmd.offset, cmd.count);
 
-                if region as usize >= self.regions.len() {
+                if !self.access_allowed(&cmd) {
                     return Err(Error::InvalidInput);
                 }
 
@@ -1337,7 +1439,14 @@ impl Server {
 
                 let (region, offset, count) = (cmd.region, cmd.offset, cmd.count);
 
-                if region as usize >= self.regions.len() {
+                let data_size = header
+                    .message_size
+                    .checked_sub(size_of::<RegionAccess>() as u32);
+                if data_size != Some(count) || !self.access_allowed(&cmd) {
+                    if let Some(data_size) = data_size {
+                        // Consumed, so the next message is read from its start.
+                        copy_exact(stream, data_size, &mut io::sink())?;
+                    }
                     return Err(Error::InvalidInput);
                 }
 
@@ -1390,6 +1499,14 @@ impl Server {
         Ok(())
     }
 
+    /// Accepts one client and serves it through `backend` until it
+    /// disconnects.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::SocketAccept`] if accepting a client fails.
+    /// - [`Error::ReceiveWithFd`] or [`Error::StreamWrite`] if the connection
+    ///   fails.
     pub fn run(&self, backend: &mut dyn ServerBackend) -> Result<(), Error> {
         let (mut stream, _) = self.listener.accept().map_err(Error::SocketAccept)?;
 
@@ -1426,6 +1543,10 @@ impl Server {
 
             if let Err(e) = self.handle_command(backend, &mut stream, header, fds) {
                 error!("Error handling command: {:?}: {e}", header.command);
+                // A refusal of No_reply itself is answered all the same.
+                if header.no_reply() && !matches!(e, Error::UnexpectedNoReply(_)) {
+                    continue;
+                }
                 let reply = Header {
                     message_id: header.message_id,
                     command: header.command,
@@ -1546,5 +1667,342 @@ mod tests {
 
         let parsed = Client::parse_region_caps(&[], &region_info).unwrap();
         assert!(parsed.is_empty());
+    }
+
+    mod version {
+        use super::*;
+
+        fn read(payload: &[u8]) -> Result<Capabilities, Error> {
+            let message_size = (size_of::<Version>() + payload.len()) as u32;
+            Capabilities::read(&mut &payload[..], message_size)
+        }
+
+        #[test]
+        fn version_data_is_parsed() {
+            assert!(matches!(
+                read(b"{\"capabilities\":{\"max_msg_fds\":4}}\0"),
+                Ok(Capabilities { max_msg_fds: 4, .. })
+            ));
+        }
+
+        #[test]
+        fn missing_data_or_capabilities_give_defaults() {
+            assert!(matches!(read(b""), Ok(Capabilities { max_msg_fds: 1, .. })));
+            assert!(matches!(
+                read(b"{}\0"),
+                Ok(Capabilities { max_msg_fds: 1, .. })
+            ));
+        }
+
+        #[test]
+        fn data_without_nul_fails() {
+            assert!(matches!(read(b"{}"), Err(Error::InvalidInput)));
+        }
+
+        #[test]
+        fn size_below_fixed_fields_fails() {
+            assert!(matches!(
+                Capabilities::read(&mut io::empty(), size_of::<Version>() as u32 - 1),
+                Err(Error::InvalidInput)
+            ));
+        }
+    }
+
+    mod server {
+        use super::*;
+        use std::net::Shutdown;
+
+        const _: () = {
+            const fn access(offset: u64, count: u32) -> RegionAccess {
+                RegionAccess {
+                    header: Header {
+                        message_id: 0,
+                        command: 0,
+                        message_size: 0,
+                        flags: 0,
+                        error: 0,
+                    },
+                    offset,
+                    region: 0,
+                    count,
+                }
+            }
+            let max = Capabilities::DEFAULT_MAX_DATA_XFER_SIZE;
+            assert!(access(0x1000 - 4, 4).fits(0x1000));
+            assert!(!access(0x1000 - 4, 5).fits(0x1000));
+            assert!(!access(u64::MAX, 1).fits(u64::MAX));
+            assert!(access(0, max).fits(u64::MAX));
+            assert!(!access(0, max + 1).fits(u64::MAX));
+        };
+
+        struct Unreachable;
+
+        impl ServerBackend for Unreachable {
+            fn region_read(&mut self, _: u32, _: u64, _: &mut [u8]) -> io::Result<()> {
+                unreachable!()
+            }
+
+            fn region_write(&mut self, _: u32, _: u64, _: &[u8]) -> io::Result<()> {
+                unreachable!()
+            }
+
+            fn dma_map(
+                &mut self,
+                _: DmaMapFlags,
+                _: u64,
+                _: u64,
+                _: u64,
+                _: Option<File>,
+            ) -> io::Result<()> {
+                unreachable!()
+            }
+
+            fn dma_unmap(&mut self, _: DmaUnmapFlags, _: u64, _: u64) -> io::Result<()> {
+                unreachable!()
+            }
+
+            fn reset(&mut self) -> io::Result<()> {
+                unreachable!()
+            }
+
+            fn set_irqs(&mut self, _: u32, _: u32, _: u32, _: u32, _: Vec<File>) -> io::Result<()> {
+                unreachable!()
+            }
+        }
+
+        fn regions() -> Vec<ServerRegion> {
+            vec![ServerRegion {
+                region_info: vfio_region_info {
+                    size: 0x1000,
+                    ..Default::default()
+                },
+                sparse_areas: Vec::new(),
+                mmap_fd: None,
+            }]
+        }
+
+        /// `handle_command` never accepts, so a connected socket stands in for
+        /// the listener.
+        fn server() -> io::Result<Server> {
+            let (listener, _) = UnixStream::pair()?;
+            Ok(Server::from_owned_fd(
+                listener.into(),
+                false,
+                Vec::new(),
+                regions(),
+            ))
+        }
+
+        fn handle(message: &[u8]) -> io::Result<(Result<(), Error>, Vec<u8>)> {
+            let mut header = Header::default();
+            header
+                .as_mut_slice()
+                .copy_from_slice(&message[..size_of::<Header>()]);
+            let (mut client, mut stream) = UnixStream::pair()?;
+            client.write_all(&message[size_of::<Header>()..])?;
+            drop(client);
+
+            let answer =
+                server()?.handle_command(&mut Unreachable, &mut stream, header, Vec::new());
+            let mut left = Vec::new();
+            stream.read_to_end(&mut left)?;
+            Ok((answer, left))
+        }
+
+        /// A region access of `count` bytes carrying `data` zero bytes.
+        fn access(
+            command: Command,
+            offset: u64,
+            count: u32,
+            data: usize,
+            flags: HeaderFlags,
+        ) -> Vec<u8> {
+            let access = RegionAccess {
+                header: Header {
+                    command: command as u16,
+                    message_size: (size_of::<RegionAccess>() + data) as u32,
+                    flags: flags as u32,
+                    ..Default::default()
+                },
+                offset,
+                region: 0,
+                count,
+            };
+            [access.as_slice(), &vec![0; data]].concat()
+        }
+
+        #[test]
+        fn read_past_region_end_fails() -> io::Result<()> {
+            let read = access(Command::RegionRead, 0x1000, 4, 0, HeaderFlags::Command);
+
+            assert!(matches!(handle(&read)?, (Err(Error::InvalidInput), _)));
+            Ok(())
+        }
+
+        #[test]
+        fn write_carrying_other_than_count_consumes_its_data() -> io::Result<()> {
+            let write = access(Command::RegionWrite, 0, 4, 8, HeaderFlags::Command);
+
+            assert!(matches!(
+                handle(&[write.as_slice(), b"next"].concat())?,
+                (Err(Error::InvalidInput), left) if left == b"next"
+            ));
+            Ok(())
+        }
+
+        #[test]
+        fn refused_no_reply_write_is_not_answered() -> Result<(), Box<dyn std::error::Error>> {
+            let path = std::env::temp_dir().join(format!("vfio-user-{}.sock", std::process::id()));
+            let server = Server::new(&path, false, Vec::new(), regions())?;
+            // Connecting before run accepts: the message waits in the socket.
+            let mut client = UnixStream::connect(&path)?;
+            client.write_all(&access(
+                Command::RegionWrite,
+                0x1000,
+                4,
+                4,
+                HeaderFlags::NoReply,
+            ))?;
+            client.shutdown(Shutdown::Write)?;
+            server.run(&mut Unreachable)?;
+
+            let mut answer = Vec::new();
+            client.read_to_end(&mut answer)?;
+            assert!(answer.is_empty());
+            Ok(())
+        }
+    }
+
+    mod client {
+        use super::*;
+        use std::time::Duration;
+
+        fn connected() -> io::Result<(Client, UnixStream)> {
+            let (stream, server) = UnixStream::pair()?;
+            // A reply that never comes fails the test instead of hanging it.
+            stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+            let client = Client {
+                stream,
+                next_message_id: Wrapping(0),
+                num_irqs: 0,
+                resettable: false,
+                regions: Vec::new(),
+            };
+            Ok((client, server))
+        }
+
+        fn region_reply(id: u16, command: Command, count: u32, data: &[u8]) -> Vec<u8> {
+            let reply = RegionAccess {
+                header: Header {
+                    message_id: id,
+                    command: command as u16,
+                    flags: HeaderFlags::Reply as u32,
+                    message_size: (size_of::<RegionAccess>() + data.len()) as u32,
+                    ..Default::default()
+                },
+                count,
+                ..Default::default()
+            };
+            [reply.as_slice(), data].concat()
+        }
+
+        fn read_reply(id: u16, data: &[u8]) -> Vec<u8> {
+            region_reply(id, Command::RegionRead, data.len() as u32, data)
+        }
+
+        /// Answers a read of four bytes with `reply` and the next read with
+        /// a good one, which must still be read whole; gives what the first
+        /// read returned.
+        fn read_after(reply: &[u8]) -> io::Result<Result<(), Error>> {
+            let (mut client, mut server) = connected()?;
+            server.write_all(reply)?;
+            server.write_all(&read_reply(1, b"next"))?;
+
+            let first = client.region_read(0, 0, &mut [0; 4]);
+            let mut data = [0; 4];
+            client
+                .region_read(0, 0, &mut data)
+                .map_err(io::Error::other)?;
+            assert_eq!(data, *b"next");
+            Ok(first)
+        }
+
+        #[test]
+        fn server_error_fails_and_its_body_is_consumed() -> io::Result<()> {
+            let error = Header {
+                command: Command::RegionRead as u16,
+                flags: HeaderFlags::Error as u32 | HeaderFlags::Reply as u32,
+                message_size: size_of::<RegionAccess>() as u32,
+                error: EINVAL.cast_unsigned(),
+                ..Default::default()
+            };
+            let body = [0; size_of::<RegionAccess>() - size_of::<Header>()];
+
+            assert!(matches!(
+                read_after(&[error.as_slice(), &body].concat())?,
+                Err(Error::Backend(error)) if error.raw_os_error() == Some(EINVAL)
+            ));
+            Ok(())
+        }
+
+        #[test]
+        fn read_reply_for_other_count_fails() -> io::Result<()> {
+            let reply = region_reply(0, Command::RegionRead, 2, b"data");
+
+            assert!(matches!(read_after(&reply)?, Err(Error::InvalidInput)));
+            Ok(())
+        }
+
+        #[test]
+        fn write_reply_carrying_data_fails() -> io::Result<()> {
+            let (mut client, mut server) = connected()?;
+            // A write reply answers for the bytes written but carries none.
+            server.write_all(&region_reply(0, Command::RegionWrite, 4, b"data"))?;
+
+            assert!(matches!(
+                client.region_write(0, 0, b"data"),
+                Err(Error::InvalidInput)
+            ));
+            Ok(())
+        }
+
+        #[test]
+        fn reply_to_other_message_fails() -> io::Result<()> {
+            assert!(matches!(
+                read_after(&read_reply(1, b"data"))?,
+                Err(Error::InvalidInput)
+            ));
+            Ok(())
+        }
+
+        fn region_info_reply(argsz: u32, caps: usize) -> DeviceGetRegionInfo {
+            DeviceGetRegionInfo {
+                header: Header {
+                    flags: HeaderFlags::Reply as u32,
+                    message_size: (size_of::<DeviceGetRegionInfo>() + caps) as u32,
+                    ..Default::default()
+                },
+                region_info: vfio_region_info {
+                    argsz,
+                    flags: VFIO_REGION_INFO_FLAG_CAPS,
+                    ..Default::default()
+                },
+            }
+        }
+
+        #[test]
+        fn capability_data_other_than_argsz_fails() -> io::Result<()> {
+            let (mut client, mut server) = connected()?;
+            let argsz = (size_of::<vfio_region_info>() + 16) as u32;
+            server.write_all(region_info_reply(argsz, 0).as_slice())?;
+            // The message carries 8 bytes of the 16 argsz promises.
+            server.write_all(region_info_reply(argsz, 8).as_slice())?;
+
+            assert!(matches!(
+                client.get_region_info(0),
+                Err(Error::InvalidInput)
+            ));
+            Ok(())
+        }
     }
 }

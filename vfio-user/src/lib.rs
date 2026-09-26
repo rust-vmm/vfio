@@ -558,7 +558,7 @@ impl Client {
             return Err(Error::NotPciDevice);
         }
 
-        self.resettable = reply.flags & VFIO_DEVICE_FLAGS_RESET != VFIO_DEVICE_FLAGS_RESET;
+        self.resettable = reply.flags & VFIO_DEVICE_FLAGS_RESET == VFIO_DEVICE_FLAGS_RESET;
 
         let num_regions = reply.num_regions;
         let mut regions = Vec::new();

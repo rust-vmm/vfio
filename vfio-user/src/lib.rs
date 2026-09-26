@@ -514,7 +514,11 @@ impl Client {
             return Err(Error::NotPciDevice);
         }
 
-        self.resettable = reply.flags & VFIO_DEVICE_FLAGS_RESET != VFIO_DEVICE_FLAGS_RESET;
+        // VFIO_DEVICE_FLAGS_RESET is set by the server when the device supports
+        // reset, so the bit must be tested for equality. The previous `!=`
+        // inverted the meaning: a device that advertised reset support was
+        // reported as not resettable and vice versa.
+        self.resettable = reply.flags & VFIO_DEVICE_FLAGS_RESET == VFIO_DEVICE_FLAGS_RESET;
 
         let num_regions = reply.num_regions;
         let mut regions = Vec::new();

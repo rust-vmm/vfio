@@ -46,15 +46,11 @@ mod tests {
     // Opinionated PartialEq implementation for vfio_irq_set.
     impl PartialEq for vfio_irq_set {
         fn eq(&self, other: &Self) -> bool {
-            if self.argsz != other.argsz
-                || self.flags != other.flags
-                || self.index != other.index
-                || self.start != other.start
-                || self.count != other.count
-            {
-                return false;
-            }
-            true
+            self.argsz == other.argsz
+                && self.flags == other.flags
+                && self.index == other.index
+                && self.start == other.start
+                && self.count == other.count
         }
     }
 

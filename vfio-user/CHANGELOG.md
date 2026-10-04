@@ -2,11 +2,14 @@
 
 ## Changed
 
+- [[175]](https://github.com/rust-vmm/vfio/pull/175) Server replies EINVAL to region accesses outside the region or above max_data_xfer_size
+
 ## Added
 
 ## Fixed
 
 - [[172]](https://github.com/rust-vmm/vfio/pull/172) Fail region info rather than report no sparse mmap areas
+- [[175]](https://github.com/rust-vmm/vfio/pull/175) Client hang on an error reply and panics on malformed VERSION or region info
 
 # [v0.1.6]
 

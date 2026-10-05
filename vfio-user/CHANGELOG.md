@@ -4,6 +4,10 @@
 
 ## Added
 
+- Implement vfio-user migration v2: the `VFIO_USER_DEVICE_FEATURE`, `VFIO_USER_MIG_DATA_READ`
+  and `VFIO_USER_MIG_DATA_WRITE` commands (device-state FSM, MIG_DATA streaming, and DMA dirty
+  logging), with matching `ServerBackend` hooks and `Client` methods.
+
 ## Fixed
 
 - [[172]](https://github.com/rust-vmm/vfio/pull/172) Fail region info rather than report no sparse mmap areas

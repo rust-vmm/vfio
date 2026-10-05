@@ -7,6 +7,7 @@
 ## Fixed
 
 - [[172]](https://github.com/rust-vmm/vfio/pull/172) Fail region info rather than report no sparse mmap areas
+- [[178]](https://github.com/rust-vmm/vfio/pull/178) Send the region fd whenever `mmap_fd` is set, never reply errno 0, stop on a broken stream
 
 # [v0.1.6]
 

@@ -75,7 +75,7 @@ pub use vfio_device::{
 };
 
 #[cfg(feature = "vfio_cdev")]
-pub use vfio_device::VfioIommufd;
+pub use vfio_device::{VfioIommufd, VfioRegionDmaRange};
 
 /// Error codes for VFIO operations.
 #[derive(Debug, Error)]
@@ -170,6 +170,9 @@ pub enum VfioError {
     IommufdIoctlError(#[source] IommufdError),
     #[error("failed to execute VFIO device feature ioctl: {0}")]
     VfioDeviceFeature(#[source] SysError),
+    #[cfg(feature = "vfio_cdev")]
+    #[error("no range to export as a dma-buf")]
+    VfioDmaBufNoRange,
     #[error("failed to get migration precopy info: {0}")]
     VfioMigGetPrecopyInfo(#[source] SysError),
     #[error("VFIO migration data fd is not present")]

@@ -10,6 +10,8 @@ use std::ffi::CStr;
 use std::fs::File;
 use std::mem::size_of;
 use std::os::unix::io::AsRawFd;
+#[cfg(feature = "vfio_cdev")]
+use std::os::unix::io::RawFd;
 
 #[cfg(not(test))]
 use log::error;
@@ -339,6 +341,22 @@ pub(crate) mod vfio_syscall {
             Err(VfioError::VfioDeviceFeature(SysError::last()))
         } else {
             Ok(())
+        }
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    pub(crate) fn device_feature_fd(
+        device: &VfioDevice,
+        feature: &mut vfio_device_feature,
+    ) -> Result<RawFd> {
+        // SAFETY: 'device' is a valid vfio device fd. The kernel reads
+        // `argsz` to bound access to the buffer, which the caller sized
+        // accordingly.
+        let ret = unsafe { ioctl_with_mut_ref(device, VFIO_DEVICE_FEATURE(), feature) };
+        if ret < 0 {
+            Err(VfioError::VfioDeviceFeature(SysError::last()))
+        } else {
+            Ok(ret as RawFd)
         }
     }
 
@@ -684,6 +702,14 @@ pub(crate) mod vfio_syscall {
             }
             _ => Err(VfioError::VfioDeviceFeature(SysError::new(libc::EINVAL))),
         }
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    pub(crate) fn device_feature_fd(
+        _device: &VfioDevice,
+        _feature: &mut vfio_device_feature,
+    ) -> Result<RawFd> {
+        Err(VfioError::VfioDeviceFeature(SysError::new(libc::ENOTTY)))
     }
 
     pub(crate) fn mig_get_precopy_info(_fd: &File, info: &mut vfio_precopy_info) -> Result<()> {

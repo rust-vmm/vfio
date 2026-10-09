@@ -1253,6 +1253,7 @@ impl VfioDevice {
             flags: 0,
             iommufd: vfio_iommufd.iommufd.as_raw_fd(),
             out_devid: 0,
+            token_uuid_ptr: 0,
         };
         vfio_syscall::bind_device_iommufd(device, &mut bind)?;
 

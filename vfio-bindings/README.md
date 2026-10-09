@@ -5,7 +5,7 @@
 The vfio-bindings crate is designed as rust FFI bindings to vfio
 generated using [bindgen](https://crates.io/crates/bindgen).
 
-Currently the bindings are generated from Linux kernel version v6.6.0.
+Currently the bindings are generated from Linux kernel version v7.2.0.
 
 ## Usage
 

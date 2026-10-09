@@ -31,6 +31,7 @@ impl<T> ::std::fmt::Debug for __IncompleteArrayField<T> {
     }
 }
 pub const __BITS_PER_LONG: u32 = 64;
+pub const __BITS_PER_LONG_LONG: u32 = 64;
 pub const __FD_SETSIZE: u32 = 1024;
 pub const _IOC_NRBITS: u32 = 8;
 pub const _IOC_TYPEBITS: u32 = 8;
@@ -58,7 +59,7 @@ pub const VFIO_SPAPR_TCE_IOMMU: u32 = 2;
 pub const VFIO_TYPE1v2_IOMMU: u32 = 3;
 pub const VFIO_DMA_CC_IOMMU: u32 = 4;
 pub const VFIO_EEH: u32 = 5;
-pub const VFIO_TYPE1_NESTING_IOMMU: u32 = 6;
+pub const __VFIO_RESERVED_TYPE1_NESTING_IOMMU: u32 = 6;
 pub const VFIO_SPAPR_TCE_v2_IOMMU: u32 = 7;
 pub const VFIO_NOIOMMU_IOMMU: u32 = 8;
 pub const VFIO_UNMAP_ALL: u32 = 9;
@@ -148,12 +149,16 @@ pub const VFIO_DEVICE_FEATURE_MASK: u32 = 65535;
 pub const VFIO_DEVICE_FEATURE_GET: u32 = 65536;
 pub const VFIO_DEVICE_FEATURE_SET: u32 = 131072;
 pub const VFIO_DEVICE_FEATURE_PROBE: u32 = 262144;
+pub const VFIO_DEVICE_BIND_FLAG_TOKEN: u32 = 1;
+pub const VFIO_DEVICE_ATTACH_PASID: u32 = 1;
+pub const VFIO_DEVICE_DETACH_PASID: u32 = 1;
 pub const VFIO_DEVICE_FEATURE_PCI_VF_TOKEN: u32 = 0;
 pub const VFIO_MIGRATION_STOP_COPY: u32 = 1;
 pub const VFIO_MIGRATION_P2P: u32 = 2;
 pub const VFIO_MIGRATION_PRE_COPY: u32 = 4;
 pub const VFIO_DEVICE_FEATURE_MIGRATION: u32 = 1;
 pub const VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE: u32 = 2;
+pub const VFIO_PRECOPY_INFO_REINIT: u32 = 1;
 pub const VFIO_DEVICE_FEATURE_LOW_POWER_ENTRY: u32 = 3;
 pub const VFIO_DEVICE_FEATURE_LOW_POWER_ENTRY_WITH_WAKEUP: u32 = 4;
 pub const VFIO_DEVICE_FEATURE_LOW_POWER_EXIT: u32 = 5;
@@ -161,6 +166,11 @@ pub const VFIO_DEVICE_FEATURE_DMA_LOGGING_START: u32 = 6;
 pub const VFIO_DEVICE_FEATURE_DMA_LOGGING_STOP: u32 = 7;
 pub const VFIO_DEVICE_FEATURE_DMA_LOGGING_REPORT: u32 = 8;
 pub const VFIO_DEVICE_FEATURE_MIG_DATA_SIZE: u32 = 9;
+pub const VFIO_DEVICE_FEATURE_CLEAR_MASTER: u32 = 0;
+pub const VFIO_DEVICE_FEATURE_SET_MASTER: u32 = 1;
+pub const VFIO_DEVICE_FEATURE_BUS_MASTER: u32 = 10;
+pub const VFIO_DEVICE_FEATURE_DMA_BUF: u32 = 11;
+pub const VFIO_DEVICE_FEATURE_MIG_PRECOPY_INFOv2: u32 = 12;
 pub const VFIO_IOMMU_INFO_PGSIZES: u32 = 1;
 pub const VFIO_IOMMU_INFO_CAPS: u32 = 2;
 pub const VFIO_IOMMU_TYPE1_INFO_CAP_IOVA_RANGE: u32 = 1;
@@ -217,6 +227,7 @@ pub type __kernel_key_t = ::std::os::raw::c_int;
 pub type __kernel_mqd_t = ::std::os::raw::c_int;
 pub type __kernel_old_uid_t = ::std::os::raw::c_ushort;
 pub type __kernel_old_gid_t = ::std::os::raw::c_ushort;
+pub type __kernel_old_dev_t = ::std::os::raw::c_ulong;
 pub type __kernel_long_t = ::std::os::raw::c_long;
 pub type __kernel_ulong_t = ::std::os::raw::c_ulong;
 pub type __kernel_ino_t = __kernel_ulong_t;
@@ -229,7 +240,6 @@ pub type __kernel_suseconds_t = __kernel_long_t;
 pub type __kernel_daddr_t = ::std::os::raw::c_int;
 pub type __kernel_uid32_t = ::std::os::raw::c_uint;
 pub type __kernel_gid32_t = ::std::os::raw::c_uint;
-pub type __kernel_old_dev_t = ::std::os::raw::c_uint;
 pub type __kernel_size_t = __kernel_ulong_t;
 pub type __kernel_ssize_t = __kernel_long_t;
 pub type __kernel_ptrdiff_t = __kernel_long_t;
@@ -247,6 +257,7 @@ const _: () = {
 };
 pub type __kernel_off_t = __kernel_long_t;
 pub type __kernel_loff_t = ::std::os::raw::c_longlong;
+pub type __kernel_uoff_t = ::std::os::raw::c_ulonglong;
 pub type __kernel_old_time_t = __kernel_long_t;
 pub type __kernel_time_t = __kernel_long_t;
 pub type __kernel_time64_t = ::std::os::raw::c_longlong;
@@ -593,7 +604,8 @@ pub const VFIO_CCW_REQ_IRQ_INDEX: _bindgen_ty_4 = 2;
 pub const VFIO_CCW_NUM_IRQS: _bindgen_ty_4 = 3;
 pub type _bindgen_ty_4 = ::std::os::raw::c_uint;
 pub const VFIO_AP_REQ_IRQ_INDEX: _bindgen_ty_5 = 0;
-pub const VFIO_AP_NUM_IRQS: _bindgen_ty_5 = 1;
+pub const VFIO_AP_CFG_CHG_IRQ_INDEX: _bindgen_ty_5 = 1;
+pub const VFIO_AP_NUM_IRQS: _bindgen_ty_5 = 2;
 pub type _bindgen_ty_5 = ::std::os::raw::c_uint;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -738,6 +750,7 @@ pub struct vfio_device_gfx_plane_info {
     pub x_hot: __u32,
     pub y_hot: __u32,
     pub __bindgen_anon_1: vfio_device_gfx_plane_info__bindgen_ty_1,
+    pub reserved: __u32,
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -802,6 +815,8 @@ const _: () = {
         [::std::mem::offset_of!(vfio_device_gfx_plane_info, x_hot) - 48usize];
     ["Offset of field: vfio_device_gfx_plane_info::y_hot"]
         [::std::mem::offset_of!(vfio_device_gfx_plane_info, y_hot) - 52usize];
+    ["Offset of field: vfio_device_gfx_plane_info::reserved"]
+        [::std::mem::offset_of!(vfio_device_gfx_plane_info, reserved) - 60usize];
 };
 impl Default for vfio_device_gfx_plane_info {
     fn default() -> Self {
@@ -814,7 +829,7 @@ impl Default for vfio_device_gfx_plane_info {
 }
 impl ::std::fmt::Debug for vfio_device_gfx_plane_info {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        write ! (f , "vfio_device_gfx_plane_info {{ argsz: {:?}, flags: {:?}, drm_plane_type: {:?}, drm_format: {:?}, drm_format_mod: {:?}, width: {:?}, height: {:?}, stride: {:?}, size: {:?}, x_pos: {:?}, y_pos: {:?}, x_hot: {:?}, y_hot: {:?}, __bindgen_anon_1: {:?} }}" , self . argsz , self . flags , self . drm_plane_type , self . drm_format , self . drm_format_mod , self . width , self . height , self . stride , self . size , self . x_pos , self . y_pos , self . x_hot , self . y_hot , self . __bindgen_anon_1)
+        write ! (f , "vfio_device_gfx_plane_info {{ argsz: {:?}, flags: {:?}, drm_plane_type: {:?}, drm_format: {:?}, drm_format_mod: {:?}, width: {:?}, height: {:?}, stride: {:?}, size: {:?}, x_pos: {:?}, y_pos: {:?}, x_hot: {:?}, y_hot: {:?}, __bindgen_anon_1: {:?}, reserved: {:?} }}" , self . argsz , self . flags , self . drm_plane_type , self . drm_format , self . drm_format_mod , self . width , self . height , self . stride , self . size , self . x_pos , self . y_pos , self . x_hot , self . y_hot , self . __bindgen_anon_1 , self . reserved)
     }
 }
 #[repr(C)]
@@ -825,6 +840,7 @@ pub struct vfio_device_ioeventfd {
     pub offset: __u64,
     pub data: __u64,
     pub fd: __s32,
+    pub reserved: __u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
@@ -841,6 +857,8 @@ const _: () = {
         [::std::mem::offset_of!(vfio_device_ioeventfd, data) - 16usize];
     ["Offset of field: vfio_device_ioeventfd::fd"]
         [::std::mem::offset_of!(vfio_device_ioeventfd, fd) - 24usize];
+    ["Offset of field: vfio_device_ioeventfd::reserved"]
+        [::std::mem::offset_of!(vfio_device_ioeventfd, reserved) - 28usize];
 };
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -867,13 +885,14 @@ pub struct vfio_device_bind_iommufd {
     pub flags: __u32,
     pub iommufd: __s32,
     pub out_devid: __u32,
+    pub token_uuid_ptr: __u64,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of vfio_device_bind_iommufd"]
-        [::std::mem::size_of::<vfio_device_bind_iommufd>() - 16usize];
+        [::std::mem::size_of::<vfio_device_bind_iommufd>() - 24usize];
     ["Alignment of vfio_device_bind_iommufd"]
-        [::std::mem::align_of::<vfio_device_bind_iommufd>() - 4usize];
+        [::std::mem::align_of::<vfio_device_bind_iommufd>() - 8usize];
     ["Offset of field: vfio_device_bind_iommufd::argsz"]
         [::std::mem::offset_of!(vfio_device_bind_iommufd, argsz) - 0usize];
     ["Offset of field: vfio_device_bind_iommufd::flags"]
@@ -882,8 +901,9 @@ const _: () = {
         [::std::mem::offset_of!(vfio_device_bind_iommufd, iommufd) - 8usize];
     ["Offset of field: vfio_device_bind_iommufd::out_devid"]
         [::std::mem::offset_of!(vfio_device_bind_iommufd, out_devid) - 12usize];
+    ["Offset of field: vfio_device_bind_iommufd::token_uuid_ptr"]
+        [::std::mem::offset_of!(vfio_device_bind_iommufd, token_uuid_ptr) - 16usize];
 };
-pub const VFIO_DEVICE_ATTACH_PASID: u32 = 1;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_device_attach_iommufd_pt {
@@ -907,7 +927,6 @@ const _: () = {
     ["Offset of field: vfio_device_attach_iommufd_pt::pasid"]
         [::std::mem::offset_of!(vfio_device_attach_iommufd_pt, pasid) - 12usize];
 };
-pub const VFIO_DEVICE_DETACH_PASID: u32 = 1;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct vfio_device_detach_iommufd_pt {
@@ -967,6 +986,7 @@ pub const vfio_device_mig_state_VFIO_DEVICE_STATE_RESUMING: vfio_device_mig_stat
 pub const vfio_device_mig_state_VFIO_DEVICE_STATE_RUNNING_P2P: vfio_device_mig_state = 5;
 pub const vfio_device_mig_state_VFIO_DEVICE_STATE_PRE_COPY: vfio_device_mig_state = 6;
 pub const vfio_device_mig_state_VFIO_DEVICE_STATE_PRE_COPY_P2P: vfio_device_mig_state = 7;
+pub const vfio_device_mig_state_VFIO_DEVICE_STATE_NR: vfio_device_mig_state = 8;
 pub type vfio_device_mig_state = ::std::os::raw::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
@@ -1082,6 +1102,62 @@ const _: () = {
         [::std::mem::align_of::<vfio_device_feature_mig_data_size>() - 8usize];
     ["Offset of field: vfio_device_feature_mig_data_size::stop_copy_length"]
         [::std::mem::offset_of!(vfio_device_feature_mig_data_size, stop_copy_length) - 0usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_device_feature_bus_master {
+    pub op: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_feature_bus_master"]
+        [::std::mem::size_of::<vfio_device_feature_bus_master>() - 4usize];
+    ["Alignment of vfio_device_feature_bus_master"]
+        [::std::mem::align_of::<vfio_device_feature_bus_master>() - 4usize];
+    ["Offset of field: vfio_device_feature_bus_master::op"]
+        [::std::mem::offset_of!(vfio_device_feature_bus_master, op) - 0usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct vfio_region_dma_range {
+    pub offset: __u64,
+    pub length: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_region_dma_range"][::std::mem::size_of::<vfio_region_dma_range>() - 16usize];
+    ["Alignment of vfio_region_dma_range"]
+        [::std::mem::align_of::<vfio_region_dma_range>() - 8usize];
+    ["Offset of field: vfio_region_dma_range::offset"]
+        [::std::mem::offset_of!(vfio_region_dma_range, offset) - 0usize];
+    ["Offset of field: vfio_region_dma_range::length"]
+        [::std::mem::offset_of!(vfio_region_dma_range, length) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct vfio_device_feature_dma_buf {
+    pub region_index: __u32,
+    pub open_flags: __u32,
+    pub flags: __u32,
+    pub nr_ranges: __u32,
+    pub dma_ranges: __IncompleteArrayField<vfio_region_dma_range>,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of vfio_device_feature_dma_buf"]
+        [::std::mem::size_of::<vfio_device_feature_dma_buf>() - 16usize];
+    ["Alignment of vfio_device_feature_dma_buf"]
+        [::std::mem::align_of::<vfio_device_feature_dma_buf>() - 8usize];
+    ["Offset of field: vfio_device_feature_dma_buf::region_index"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_buf, region_index) - 0usize];
+    ["Offset of field: vfio_device_feature_dma_buf::open_flags"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_buf, open_flags) - 4usize];
+    ["Offset of field: vfio_device_feature_dma_buf::flags"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_buf, flags) - 8usize];
+    ["Offset of field: vfio_device_feature_dma_buf::nr_ranges"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_buf, nr_ranges) - 12usize];
+    ["Offset of field: vfio_device_feature_dma_buf::dma_ranges"]
+        [::std::mem::offset_of!(vfio_device_feature_dma_buf, dma_ranges) - 16usize];
 };
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]

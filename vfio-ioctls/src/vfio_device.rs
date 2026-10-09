@@ -13,6 +13,8 @@ use std::mem::{self, ManuallyDrop};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::prelude::FileExt;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "vfio_cdev")]
+use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 
 use byteorder::{ByteOrder, NativeEndian};
@@ -1184,6 +1186,8 @@ pub struct VfioDevice {
     pub(crate) migration_data_fd: Mutex<Option<File>>,
     pub(crate) dma_logging_started: Mutex<bool>,
     pub(crate) iommufd_dev_id: Option<u32>,
+    #[cfg(feature = "vfio_cdev")]
+    pub(crate) dma_buf: OnceLock<bool>,
 }
 
 /// Remaining migration data reported by the kernel during precopy.
@@ -1193,6 +1197,16 @@ pub struct PrecopyInfo {
     pub initial_bytes: u64,
     /// Bytes of dirty state that have accumulated since precopy started.
     pub dirty_bytes: u64,
+}
+
+/// Range of a VFIO device region.
+#[cfg(feature = "vfio_cdev")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VfioRegionDmaRange {
+    /// Offset from the start of the region.
+    pub offset: u64,
+    /// Length of the range in bytes.
+    pub length: u64,
 }
 
 /// IOVA range tracked or reported by VFIO DMA logging.
@@ -1335,6 +1349,8 @@ impl VfioDevice {
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
             iommufd_dev_id,
+            #[cfg(feature = "vfio_cdev")]
+            dma_buf: OnceLock::new(),
         })
     }
 
@@ -1377,6 +1393,8 @@ impl VfioDevice {
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
             iommufd_dev_id,
+            #[cfg(feature = "vfio_cdev")]
+            dma_buf: OnceLock::new(),
         })
     }
 
@@ -1861,6 +1879,67 @@ impl VfioDevice {
         }
     }
 
+    /// Check for dma-buf support
+    #[cfg(feature = "vfio_cdev")]
+    fn supports_dma_buf(&self) -> bool {
+        *self.dma_buf.get_or_init(|| {
+            let mut feature_buf = vec_with_array_field::<vfio_device_feature, u8>(0);
+            feature_buf[0].argsz = mem::size_of::<vfio_device_feature>() as u32;
+            feature_buf[0].flags =
+                VFIO_DEVICE_FEATURE_PROBE | VFIO_DEVICE_FEATURE_GET | VFIO_DEVICE_FEATURE_DMA_BUF;
+
+            let supported = vfio_syscall::device_feature(self, &mut feature_buf[0]).is_ok();
+            debug!("dma-buf export supported: {}", supported);
+            supported
+        })
+    }
+
+    /// Export device memory ranges into a dma-buf file descriptor
+    #[cfg(feature = "vfio_cdev")]
+    pub fn export_dma_buf(
+        &self,
+        region_index: u32,
+        ranges: &[VfioRegionDmaRange],
+        open_flags: u32,
+    ) -> Result<Option<File>> {
+        if !self.supports_dma_buf() {
+            return Ok(None);
+        }
+
+        if ranges.is_empty() {
+            return Err(VfioError::VfioDmaBufNoRange);
+        }
+
+        let payload = mem::size_of::<vfio_device_feature_dma_buf>()
+            + ranges.len() * mem::size_of::<vfio_region_dma_range>();
+        let mut feature_buf = vec_with_array_field::<vfio_device_feature, u8>(payload);
+        feature_buf[0].argsz = (mem::size_of::<vfio_device_feature>() + payload) as u32;
+        feature_buf[0].flags = VFIO_DEVICE_FEATURE_GET | VFIO_DEVICE_FEATURE_DMA_BUF;
+
+        // SAFETY: vec_with_array_field reserved `payload` bytes right after
+        // the header, which is what the header and the ranges occupy.
+        unsafe {
+            let hdr = feature_buf[0].data.as_mut_ptr() as *mut vfio_device_feature_dma_buf;
+            (*hdr).region_index = region_index;
+            (*hdr).open_flags = open_flags;
+            (*hdr).flags = 0;
+            (*hdr).nr_ranges = ranges.len() as u32;
+
+            let mut entry = hdr.add(1) as *mut vfio_region_dma_range;
+            for range in ranges {
+                (*entry).offset = range.offset;
+                (*entry).length = range.length;
+                entry = entry.add(1);
+            }
+        }
+
+        let fd = vfio_syscall::device_feature_fd(self, &mut feature_buf[0])?;
+
+        // SAFETY: the kernel answered with a file descriptor it no longer
+        // owns.
+        Ok(Some(unsafe { File::from_raw_fd(fd) }))
+    }
+
     /// Set the device migration state.
     ///
     /// Transitions into a streaming state (PRE_COPY, PRE_COPY_P2P, STOP_COPY,
@@ -2319,6 +2398,8 @@ mod tests {
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
             iommufd_dev_id: None,
+            #[cfg(feature = "vfio_cdev")]
+            dma_buf: OnceLock::new(),
         }
     }
 

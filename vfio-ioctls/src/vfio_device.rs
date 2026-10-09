@@ -19,7 +19,7 @@ use byteorder::{ByteOrder, NativeEndian};
 #[cfg(feature = "vfio_cdev")]
 use iommufd_bindings::*;
 #[cfg(feature = "vfio_cdev")]
-use iommufd_ioctls::{AttachHwpt, IommuFd};
+use iommufd_ioctls::{AttachHwpt, IommuFd, IommufdIoas};
 use log::{debug, error, warn};
 use vfio_bindings::bindings::vfio::*;
 use vm_memory::{Address, GuestMemoryBackend, GuestMemoryRegion, MemoryRegionAddress};
@@ -678,9 +678,7 @@ impl AsRawFd for VfioGroup {
 #[cfg(feature = "vfio_cdev")]
 pub struct VfioIommufd {
     pub(crate) iommufd: Arc<IommuFd>,
-    pub(crate) ioas_id: u32,
-    // True when we allocated the IOAS and must destroy it on drop
-    owns_ioas: bool,
+    pub(crate) ioas: Arc<IommufdIoas>,
     common: VfioCommon,
 }
 
@@ -691,36 +689,23 @@ impl VfioIommufd {
     ///
     /// # Arguments
     /// * `iommufd`: the iommufd to be bound with the VFIO device
-    /// * `ioas_id`: the IOAS id to be bound with the VFIO device
+    /// * `ioas`: the IOAS to be bound with the VFIO device
     /// * `device_fd`: An optional file handle of the hypervisor VFIO device.
     pub fn new(
         iommufd: Arc<IommuFd>,
-        ioas_id: Option<u32>,
+        ioas: Option<Arc<IommufdIoas>>,
         device_fd: Option<VfioContainerDeviceHandle>,
     ) -> Result<Self> {
-        let owns_ioas = ioas_id.is_none();
-        let ioas_id = match ioas_id {
-            Some(ioas_id) => ioas_id,
+        let ioas = match ioas {
+            Some(ioas) => ioas,
             None => {
-                let mut alloc_data = iommu_ioas_alloc {
-                    size: mem::size_of::<iommu_ioas_alloc>() as u32,
-                    flags: 0,
-                    out_ioas_id: 0,
-                };
-
-                iommufd
-                    .as_ref()
-                    .alloc_iommu_ioas(&mut alloc_data)
-                    .map_err(VfioError::NewVfioIommufd)?;
-
-                alloc_data.out_ioas_id
+                Arc::new(IommufdIoas::new(Arc::clone(&iommufd)).map_err(VfioError::NewVfioIommufd)?)
             }
         };
 
         let vfio_iommufd = VfioIommufd {
             iommufd,
-            ioas_id,
-            owns_ioas,
+            ioas,
             common: VfioCommon { device_fd },
         };
 
@@ -733,8 +718,8 @@ impl VfioIommufd {
     }
 
     /// The IOAS devices are bound against.
-    pub fn ioas_id(&self) -> u32 {
-        self.ioas_id
+    pub fn ioas(&self) -> &Arc<IommufdIoas> {
+        &self.ioas
     }
 
     /// Map a region of user space memory (e.g. guest memory) into an IO
@@ -771,7 +756,7 @@ impl VfioIommufd {
             flags: iommufd_ioas_map_flags_IOMMU_IOAS_MAP_READABLE
                 | iommufd_ioas_map_flags_IOMMU_IOAS_MAP_WRITEABLE
                 | iommufd_ioas_map_flags_IOMMU_IOAS_MAP_FIXED_IOVA,
-            ioas_id: self.ioas_id,
+            ioas_id: self.ioas.id(),
             __reserved: 0,
             user_va: user_addr as _,
             length: length.try_into().unwrap(),
@@ -793,7 +778,7 @@ impl VfioIommufd {
     pub fn vfio_dma_unmap(&self, iova: u64, length: usize) -> Result<()> {
         let mut dma_unmap = iommu_ioas_unmap {
             size: mem::size_of::<iommu_ioas_unmap>() as u32,
-            ioas_id: self.ioas_id,
+            ioas_id: self.ioas.id(),
             iova,
             length: u64::try_from(length).unwrap(),
         };
@@ -807,27 +792,6 @@ impl VfioIommufd {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(feature = "vfio_cdev")]
-impl Drop for VfioIommufd {
-    fn drop(&mut self) {
-        // Destroy the IOAS we allocated so a long-lived (externally
-        // supplied) iommufd does not accumulate orphan IOAS objects.
-        // By the time Drop runs, the `Arc<dyn VfioOps>` chain has
-        // already dropped every `VfioDevice`, each of which detached
-        // itself from this IOAS, so the kernel refcount is back to 1
-        // and IOMMU_DESTROY won't return -EBUSY. The destroy implicitly
-        // unmaps any remaining mappings too.
-        if self.owns_ioas {
-            if let Err(e) = self.iommufd.destroy_iommu_object(self.ioas_id) {
-                error!(
-                    "Failed to destroy IOAS {} on VfioIommufd drop: {}",
-                    self.ioas_id, e
-                );
-            }
-        }
     }
 }
 
@@ -1301,7 +1265,7 @@ impl VfioDevice {
         let mut attach_data = vfio_device_attach_iommufd_pt {
             argsz: mem::size_of::<vfio_device_attach_iommufd_pt>() as u32,
             flags: 0,
-            pt_id: vfio_iommufd.ioas_id,
+            pt_id: vfio_iommufd.ioas.id(),
             pasid: 0,
         };
         vfio_syscall::attach_device_iommufd_pt(device, &mut attach_data)?;

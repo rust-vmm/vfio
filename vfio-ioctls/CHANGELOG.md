@@ -6,6 +6,25 @@
 
 ## Fixed
 
+# [v0.10.0]
+
+## Changed
+
+- Require `vfio-bindings` v0.7.0 and `iommufd-ioctls` v0.4.0
+- `VfioIommufd::new()` takes the address space to bind against as an
+  `Arc<IommufdIoas>`, or `None` to allocate one, rather than an IOAS
+  identifier
+- Removed `VfioIommufd::ioas_id()`, superseded by `ioas()`
+
+## Added
+
+- `VfioDevice::export_dma_buf()`, exporting device region ranges as a
+  dma-buf so an importer can be told to drop them when the device stops
+  decoding
+- `VfioRegionDmaRange`, naming the ranges handed to it
+
+## Fixed
+
 # [v0.9.1]
 
 ## Changed

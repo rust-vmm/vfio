@@ -6,6 +6,19 @@
 
 ## Added
 
+# [v0.7.0]
+
+## Changed
+
+- Regenerate the bindings from Linux v7.2
+
+## Fixed
+
+## Added
+
+- The dma-buf device feature, with `vfio_device_feature_dma_buf` and
+  `vfio_region_dma_range`
+
 # [v0.6.3]
 
 ## Changed

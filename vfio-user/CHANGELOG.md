@@ -6,6 +6,16 @@
 
 ## Fixed
 
+# [v0.1.7]
+
+## Changed
+
+- Require `vfio-bindings` v0.7.0
+
+## Added
+
+## Fixed
+
 - [[172]](https://github.com/rust-vmm/vfio/pull/172) Fail region info rather than report no sparse mmap areas
 
 # [v0.1.6]

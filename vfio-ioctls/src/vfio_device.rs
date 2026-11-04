@@ -421,10 +421,12 @@ impl VfioContainer {
         // Safe because there's no legal way to break the lock.
         let mut hash = self.groups.lock().unwrap();
 
-        // Clean up the group when the last user releases reference to the group, three reference
-        // count for:
-        // - one reference cloned in VfioDevice.drop() and passed into here
-        // - one reference held by the groups hashmap
+        // Clean up the group when the last user releases its reference to the group. At that
+        // point exactly two references are left:
+        // - the one held by the dropping VfioDevice and passed into here
+        // - the one held by the groups hashmap
+        // Any other VfioDevice sharing the group still holds its own reference, which keeps the
+        // count above two until that device is dropped in turn.
         if Arc::strong_count(&group) == 2 {
             #[cfg(any(feature = "kvm", feature = "mshv"))]
             match self.device_del_group(&group) {

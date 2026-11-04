@@ -85,6 +85,8 @@ pub enum VfioError {
     OpenContainer(#[source] io::Error),
     #[error("failed to open /dev/vfio/{1} group: {0}")]
     OpenGroup(#[source] io::Error, String),
+    #[error("failed to get the metadata of the VFIO group file: {0}")]
+    GroupMetadata(#[source] io::Error),
     #[error("failed to get Group Status")]
     GetGroupStatus,
     #[error("group is not viable")]

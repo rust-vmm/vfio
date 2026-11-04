@@ -10,9 +10,11 @@ use std::ffi::CString;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::mem::{self, ManuallyDrop};
-use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::prelude::FileExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(not(test), feature = "vfio_cdev"))]
+use std::path::PathBuf;
 #[cfg(feature = "vfio_cdev")]
 use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
@@ -281,7 +283,7 @@ pub struct VfioContainer {
 }
 
 impl VfioContainer {
-    /// Create a container wrapper object.
+    /// Create a container wrapper object from `/dev/vfio/vfio`.
     ///
     /// # Arguments
     /// * `device_fd`: An optional file handle of the hypervisor VFIO device.
@@ -292,8 +294,24 @@ impl VfioContainer {
             .open("/dev/vfio/vfio")
             .map_err(VfioError::OpenContainer)?;
 
+        Self::new_from_fd(container.into(), device_fd)
+    }
+
+    /// Create a container wrapper object from an opened VFIO container file.
+    ///
+    /// This lets a caller open the container from a device node that is not exposed at
+    /// `/dev/vfio/vfio`, for instance in a sandbox that mounts the device nodes elsewhere.
+    ///
+    /// # Arguments
+    /// * `container`: an opened VFIO container file whose ownership is transferred into the
+    ///   returned `VfioContainer`.
+    /// * `device_fd`: An optional file handle of the hypervisor VFIO device.
+    pub fn new_from_fd(
+        container: OwnedFd,
+        device_fd: Option<VfioContainerDeviceHandle>,
+    ) -> Result<Self> {
         let container = VfioContainer {
-            container,
+            container: File::from(container),
             common: VfioCommon { device_fd },
             groups: Mutex::new(HashMap::new()),
         };
@@ -340,7 +358,42 @@ impl VfioContainer {
         }
 
         let group = Arc::new(VfioGroup::new(group_id)?);
+        self.bind_group(&mut hash, group)
+    }
 
+    /// Lookup or attach the VFIO group backed by the opened `group` file to this container.
+    ///
+    /// If the container already tracks the group, `group` is closed and the tracked group is
+    /// returned.
+    fn get_group_from_fd(&self, group: OwnedFd) -> Result<Arc<VfioGroup>> {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+
+        let group = File::from(group);
+        // The kernel names a group device node after its minor number, which is the group ID
+        // `get_group()` uses. Regular files only show up in unit tests, where the inode number
+        // plays the same role.
+        let meta = group.metadata().map_err(VfioError::GroupMetadata)?;
+        let group_id = if meta.file_type().is_char_device() {
+            libc::minor(meta.rdev())
+        } else {
+            meta.ino() as u32
+        };
+
+        // Safe because there's no legal way to break the lock.
+        let mut hash = self.groups.lock().unwrap();
+        if let Some(entry) = hash.get(&group_id) {
+            return Ok(entry.clone());
+        }
+
+        let group = Arc::new(VfioGroup::new_from_file(group_id, group)?);
+        self.bind_group(&mut hash, group)
+    }
+
+    fn bind_group(
+        &self,
+        hash: &mut HashMap<u32, Arc<VfioGroup>>,
+        group: Arc<VfioGroup>,
+    ) -> Result<Arc<VfioGroup>> {
         // Bind the new group object to the container.
         vfio_syscall::set_group_container(&group, self)?;
 
@@ -359,7 +412,7 @@ impl VfioContainer {
             return Err(e);
         }
 
-        hash.insert(group_id, group.clone());
+        hash.insert(group.id(), group.clone());
 
         Ok(group)
     }
@@ -642,7 +695,15 @@ impl VfioGroup {
     /// # Parameters
     /// * `id`: ID(index) of the VFIO group file.
     fn new(id: u32) -> Result<Self> {
-        let group = Self::open_group_file(id)?;
+        Self::new_from_file(id, Self::open_group_file(id)?)
+    }
+
+    /// Create a new VfioGroup object from an opened VFIO group file.
+    ///
+    /// # Parameters
+    /// * `id`: ID used to track the group within its container.
+    /// * `group`: the opened VFIO group file.
+    fn new_from_file(id: u32, group: File) -> Result<Self> {
         let mut group_status = vfio_group_status {
             argsz: mem::size_of::<vfio_group_status>() as u32,
             flags: 0,
@@ -662,7 +723,12 @@ impl VfioGroup {
     fn get_device(&self, name: &Path) -> Result<VfioDeviceInfo> {
         let uuid_osstr = name.file_name().ok_or(VfioError::InvalidPath)?;
         let uuid_str = uuid_osstr.to_str().ok_or(VfioError::InvalidPath)?;
-        let path: CString = CString::new(uuid_str.as_bytes()).expect("CString::new() failed");
+        self.get_device_by_name(uuid_str)
+    }
+
+    fn get_device_by_name(&self, device_name: &str) -> Result<VfioDeviceInfo> {
+        let path: CString =
+            CString::new(device_name.as_bytes()).map_err(|_| VfioError::InvalidPath)?;
         let device = vfio_syscall::get_group_device_fd(self, &path)?;
         let dev_info = VfioDeviceInfo::get_device_info(&device)?;
 
@@ -1181,7 +1247,8 @@ pub struct VfioDevice {
     pub(crate) flags: u32,
     pub(crate) regions: Vec<VfioRegion>,
     pub(crate) irqs: HashMap<u32, VfioIrq>,
-    pub(crate) sysfspath: Option<PathBuf>,
+    /// The VFIO group the device belongs to, for devices opened through a legacy container.
+    pub(crate) group: Option<Arc<VfioGroup>>,
     pub(crate) vfio_ops: Arc<dyn VfioOps>,
     pub(crate) migration_data_fd: Mutex<Option<File>>,
     pub(crate) dma_logging_started: Mutex<bool>,
@@ -1293,12 +1360,13 @@ impl VfioDevice {
         sysfspath: &Path,
         vfio_ops: Arc<dyn VfioOps>,
         attach_ioas: bool,
-    ) -> Result<(VfioDeviceInfo, Option<u32>)> {
+    ) -> Result<(VfioDeviceInfo, Option<u32>, Option<Arc<VfioGroup>>)> {
         if let Some(vfio_container) = vfio_ops.as_any().downcast_ref::<VfioContainer>() {
             let group_id = Self::get_group_id_from_path(sysfspath)?;
             let group = vfio_container.get_group(group_id)?;
+            let device_info = group.get_device(sysfspath)?;
 
-            return Ok((group.get_device(sysfspath)?, None));
+            return Ok((device_info, None, Some(group)));
         }
 
         #[cfg(feature = "vfio_cdev")]
@@ -1321,7 +1389,7 @@ impl VfioDevice {
             let dev_info = VfioDeviceInfo::get_device_info(&device)?;
             let dev_info = VfioDeviceInfo::new(device, &dev_info);
 
-            return Ok((dev_info, Some(iommufd_dev_id)));
+            return Ok((dev_info, Some(iommufd_dev_id), None));
         }
 
         Err(VfioError::DowncastVfioOps)
@@ -1334,7 +1402,7 @@ impl VfioDevice {
     /// * `vfio_ops`: the vfio device wrapper object that the new VFIO device object will bind to.
     /// * `attach_ioas`: whether to attach the device to iommufd's IOAS
     pub fn new(sysfspath: &Path, vfio_ops: Arc<dyn VfioOps>, attach_ioas: bool) -> Result<Self> {
-        let (device_info, iommufd_dev_id) =
+        let (device_info, iommufd_dev_id, group) =
             Self::get_device_info(sysfspath, vfio_ops.clone(), attach_ioas)?;
         let regions = device_info.get_regions()?;
         let irqs = device_info.get_irqs()?;
@@ -1344,7 +1412,7 @@ impl VfioDevice {
             flags: device_info.flags,
             regions,
             irqs,
-            sysfspath: Some(sysfspath.to_path_buf()),
+            group,
             vfio_ops,
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
@@ -1388,11 +1456,55 @@ impl VfioDevice {
             flags: device_info.flags,
             regions,
             irqs,
-            sysfspath: None,
+            group: None,
             vfio_ops: vfio_iommufd,
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
             iommufd_dev_id,
+            #[cfg(feature = "vfio_cdev")]
+            dma_buf: OnceLock::new(),
+        })
+    }
+
+    /// Create a new vfio device from an opened legacy VFIO group file and a device name.
+    ///
+    /// Unlike [`VfioDevice::new()`], this does not locate and open the group through sysfs,
+    /// so the group device node can live outside `/dev/vfio`, for instance in a sandbox.
+    ///
+    /// A group file can only be opened once. To create several devices of the same group, pass
+    /// a `try_clone()` of the group file each time; the clone is closed if `vfio_ops` already
+    /// tracks the group.
+    ///
+    /// # Parameters
+    /// * `group`: an opened VFIO group file whose ownership is transferred into the
+    ///   container's group bookkeeping.
+    /// * `device_name`: Name of the device within the group, as passed to
+    ///   `VFIO_GROUP_GET_DEVICE_FD` (e.g. the PCI address `0000:01:00.0`).
+    /// * `vfio_ops`: the legacy `VfioContainer` the group will be bound to.
+    pub fn new_from_group_fd(
+        group: OwnedFd,
+        device_name: &str,
+        vfio_ops: Arc<dyn VfioOps>,
+    ) -> Result<Self> {
+        let vfio_container = vfio_ops
+            .as_any()
+            .downcast_ref::<VfioContainer>()
+            .ok_or(VfioError::DowncastVfioOps)?;
+        let group = vfio_container.get_group_from_fd(group)?;
+        let device_info = group.get_device_by_name(device_name)?;
+        let regions = device_info.get_regions()?;
+        let irqs = device_info.get_irqs()?;
+
+        Ok(VfioDevice {
+            device: ManuallyDrop::new(device_info.device),
+            flags: device_info.flags,
+            regions,
+            irqs,
+            group: Some(group),
+            vfio_ops,
+            migration_data_fd: Mutex::new(None),
+            dma_logging_started: Mutex::new(false),
+            iommufd_dev_id: None,
             #[cfg(feature = "vfio_cdev")]
             dma_buf: OnceLock::new(),
         })
@@ -2237,15 +2349,11 @@ impl Drop for VfioDevice {
                 ManuallyDrop::drop(&mut self.device);
             }
 
-            // VfioContainer always sets sysfspath, as it requires a sysfs path to get
-            // the group id and open the group file, so it is safe to unwrap here.
-            let sysfspath = self
-                .sysfspath
-                .as_deref()
-                .expect("VfioContainer requires a sysfs path");
-            let group_id = Self::get_group_id_from_path(sysfspath).unwrap();
-            let group = container.get_group(group_id).unwrap();
-            container.put_group(group);
+            // Release our reference to the group; the container drops the group once the last
+            // device using it is gone.
+            if let Some(group) = self.group.take() {
+                container.put_group(group);
+            }
         }
 
         #[cfg(feature = "vfio_cdev")]
@@ -2393,7 +2501,7 @@ mod tests {
             flags: 0,
             regions: device_info.get_regions().unwrap(),
             irqs: device_info.get_irqs().unwrap(),
-            sysfspath: Some(path.to_path_buf()),
+            group: None,
             vfio_ops: Arc::new(create_vfio_container()),
             migration_data_fd: Mutex::new(None),
             dma_logging_started: Mutex::new(false),
@@ -2727,6 +2835,62 @@ mod tests {
         unsafe { container.vfio_dma_map(0x2000, 0x2000, 0x8000 as _) }.unwrap_err();
         container.vfio_dma_unmap(0x1000, 0x1000).unwrap();
         container.vfio_dma_unmap(0x2000, 0x2000).unwrap_err();
+    }
+
+    #[test]
+    fn test_vfio_container_new_from_fd() {
+        let tmp_file = TempFile::new().unwrap();
+        let file = File::open(tmp_file.as_path()).unwrap();
+        let container = VfioContainer::new_from_fd(file.into(), None).unwrap();
+        assert!(container.as_raw_fd() > 0);
+        assert!(container.groups.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_vfio_device_new_from_group_fd() {
+        let container = Arc::new(create_vfio_container());
+        let group_file = TempFile::new().unwrap();
+        let group_fd = OwnedFd::from(File::open(group_file.as_path()).unwrap());
+
+        // Two devices created from the same group file share one VfioGroup.
+        let dev0 = VfioDevice::new_from_group_fd(
+            group_fd.try_clone().unwrap(),
+            "0000:01:00.0",
+            container.clone(),
+        )
+        .unwrap();
+        let dev1 = VfioDevice::new_from_group_fd(
+            group_fd.try_clone().unwrap(),
+            "0000:01:00.1",
+            container.clone(),
+        )
+        .unwrap();
+        assert_eq!(container.groups.lock().unwrap().len(), 1);
+        let group = dev0.group.as_ref().unwrap();
+        assert!(Arc::ptr_eq(group, dev1.group.as_ref().unwrap()));
+        // One reference each in the groups table, dev0 and dev1.
+        assert_eq!(Arc::strong_count(group), 3);
+
+        // A different group file opens a second group.
+        let other_group_file = TempFile::new().unwrap();
+        let other_group_fd = OwnedFd::from(File::open(other_group_file.as_path()).unwrap());
+        let dev2 = VfioDevice::new_from_group_fd(other_group_fd, "0000:02:00.0", container.clone())
+            .unwrap();
+        assert_eq!(container.groups.lock().unwrap().len(), 2);
+        assert!(!Arc::ptr_eq(group, dev2.group.as_ref().unwrap()));
+
+        // The group stays bound to the container until its last device is dropped.
+        drop(dev0);
+        assert_eq!(container.groups.lock().unwrap().len(), 2);
+        drop(dev1);
+        assert_eq!(container.groups.lock().unwrap().len(), 1);
+        drop(dev2);
+        assert!(container.groups.lock().unwrap().is_empty());
+
+        assert!(matches!(
+            VfioDevice::new_from_group_fd(group_fd, "bad\0name", container),
+            Err(VfioError::InvalidPath)
+        ));
     }
 
     #[test]

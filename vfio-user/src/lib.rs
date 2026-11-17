@@ -4,7 +4,7 @@
 //
 
 use bitflags::bitflags;
-use libc::{c_void, iovec, EINVAL};
+use libc::{c_void, iovec, EINVAL, EIO};
 use libc::{sysconf, _SC_PAGESIZE};
 use std::ffi::CString;
 use std::fs::File;
@@ -305,12 +305,22 @@ pub enum Error {
     UnsupportedCommand(Command),
     #[error("Unsupported feature")]
     UnsupportedFeature,
-    #[error("Error from backend: {0:?}")]
+    #[error("Error from backend: {0}")]
     Backend(#[source] std::io::Error),
     #[error("Invalid input")]
     InvalidInput,
     #[error("No_reply bit unexpectedly set for command: {0:?}")]
     UnexpectedNoReply(Command),
+}
+
+impl Error {
+    /// The errno of the error reply to a command.
+    fn reply_errno(&self) -> i32 {
+        match self {
+            Error::Backend(error) => error.raw_os_error().unwrap_or(EIO),
+            _ => EINVAL,
+        }
+    }
 }
 
 /// The header every capability of a region begins with.
@@ -1180,6 +1190,12 @@ impl Server {
 
                 let server_region = &self.regions[cmd.region_info.index as usize];
                 let mut region_info = server_region.region_info;
+                // FLAG_MMAP promises the fd, so it follows mmap_fd.
+                match server_region.mmap_fd {
+                    Some(_) => region_info.flags |= VFIO_REGION_INFO_FLAG_MMAP,
+                    None => region_info.flags &= !VFIO_REGION_INFO_FLAG_MMAP,
+                }
+
                 let sparse_areas = &server_region.sparse_areas;
 
                 let mut cap_data: Vec<u8> = Vec::new();
@@ -1232,23 +1248,17 @@ impl Server {
                     region_info,
                 };
 
+                let mut buf = reply.as_slice().to_vec();
                 if send_cap_data {
-                    let reply_bytes = reply.as_slice();
-                    let mut buf = Vec::with_capacity(reply_bytes.len() + cap_data.len());
-                    buf.extend_from_slice(reply_bytes);
                     buf.extend_from_slice(&cap_data);
+                }
 
-                    if let Some(fd) = server_region.mmap_fd {
-                        stream
-                            .send_with_fds(&[&buf[..]], &[fd])
-                            .map_err(Error::SendWithFd)?;
-                    } else {
-                        stream.write_all(&buf).map_err(Error::StreamWrite)?;
-                    }
-                } else {
+                if let Some(fd) = server_region.mmap_fd {
                     stream
-                        .write_all(reply.as_slice())
-                        .map_err(Error::StreamWrite)?;
+                        .send_with_fds(&[&buf[..]], &[fd])
+                        .map_err(Error::SendWithFd)?;
+                } else {
+                    stream.write_all(&buf).map_err(Error::StreamWrite)?;
                 }
             }
             Command::GetIrqInfo => {
@@ -1462,22 +1472,27 @@ impl Server {
                 .map(|fd| unsafe { File::from_raw_fd(*fd) })
                 .collect();
 
-            if let Err(e) = self.handle_command(backend, &mut stream, header, fds) {
-                error!("Error handling command: {:?}: {e}", header.command);
-                let reply = Header {
-                    message_id: header.message_id,
-                    command: header.command,
-                    flags: HeaderFlags::Error as u32 | HeaderFlags::Reply as u32,
-                    message_size: size_of::<Header>() as u32,
-                    error: if matches!(e, Error::InvalidInput) {
-                        EINVAL as u32
-                    } else {
-                        0
-                    },
-                };
-                stream
-                    .write_all(reply.as_slice())
-                    .map_err(Error::StreamWrite)?;
+            match self
+                .handle_command(backend, &mut stream, header, fds)
+                .inspect_err(|e| error!("Error handling command: {:?}: {e}", header.command))
+            {
+                Ok(()) => {}
+                // The peer is gone or the message boundary is lost.
+                Err(e @ (Error::StreamRead(_) | Error::StreamWrite(_) | Error::SendWithFd(_))) => {
+                    return Err(e);
+                }
+                Err(e) => {
+                    let reply = Header {
+                        message_id: header.message_id,
+                        command: header.command,
+                        flags: HeaderFlags::Error as u32 | HeaderFlags::Reply as u32,
+                        message_size: size_of::<Header>() as u32,
+                        error: e.reply_errno().cast_unsigned(),
+                    };
+                    stream
+                        .write_all(reply.as_slice())
+                        .map_err(Error::StreamWrite)?;
+                }
             }
         }
 
@@ -1497,7 +1512,70 @@ impl Drop for Server {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+    use std::net::Shutdown;
+    use std::os::fd::AsRawFd;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use libc::EBUSY;
+
     use super::*;
+
+    /// A backend for commands that do not reach it.
+    struct Unreachable;
+
+    impl ServerBackend for Unreachable {
+        fn region_read(&mut self, _: u32, _: u64, _: &mut [u8]) -> io::Result<()> {
+            unreachable!()
+        }
+
+        fn region_write(&mut self, _: u32, _: u64, _: &[u8]) -> io::Result<()> {
+            unreachable!()
+        }
+
+        fn dma_map(
+            &mut self,
+            _: DmaMapFlags,
+            _: u64,
+            _: u64,
+            _: u64,
+            _: Option<File>,
+        ) -> io::Result<()> {
+            unreachable!()
+        }
+
+        fn dma_unmap(&mut self, _: DmaUnmapFlags, _: u64, _: u64) -> io::Result<()> {
+            unreachable!()
+        }
+
+        fn reset(&mut self) -> io::Result<()> {
+            unreachable!()
+        }
+
+        fn set_irqs(&mut self, _: u32, _: u32, _: u32, _: u32, _: Vec<File>) -> io::Result<()> {
+            unreachable!()
+        }
+    }
+
+    /// Runs a server with `regions` for a client that sends `request` and
+    /// stops writing. Returns the client's stream.
+    fn serve(regions: Vec<ServerRegion>, request: &[u8]) -> Result<UnixStream, Error> {
+        static SOCKETS: AtomicU32 = AtomicU32::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "vfio-user-test-{}-{}.sock",
+            std::process::id(),
+            SOCKETS.fetch_add(1, Ordering::Relaxed)
+        ));
+        let server = Server::new(&path, false, Vec::new(), regions)?;
+        let mut stream = UnixStream::connect(&path).map_err(Error::Connect)?;
+        stream.write_all(request).map_err(Error::StreamWrite)?;
+        stream
+            .shutdown(Shutdown::Write)
+            .map_err(Error::StreamShutdown)?;
+        server.run(&mut Unreachable)?;
+
+        Ok(stream)
+    }
 
     mod capability {
         use super::*;
@@ -1627,6 +1705,111 @@ mod tests {
                     Err(CapabilityError::AreaCount { .. })
                 ));
             }
+        }
+    }
+
+    mod error {
+        use super::*;
+
+        #[test]
+        fn backend_error_replies_its_errno() {
+            let error = Error::Backend(io::Error::from_raw_os_error(EBUSY));
+
+            assert_eq!(error.reply_errno(), EBUSY);
+        }
+
+        #[test]
+        fn backend_error_without_errno_replies_nonzero() {
+            assert_ne!(Error::Backend(io::Error::other("failed")).reply_errno(), 0);
+        }
+    }
+
+    mod region_info {
+        use super::*;
+
+        /// The reply to a region info request for a region with `flags` and
+        /// `mmap_fd`, and the fd that came with it.
+        fn reply_for(
+            flags: u32,
+            mmap_fd: Option<RawFd>,
+        ) -> Result<(vfio_region_info, Option<File>), Error> {
+            let region = ServerRegion {
+                region_info: vfio_region_info {
+                    flags,
+                    ..Default::default()
+                },
+                sparse_areas: Vec::new(),
+                mmap_fd,
+            };
+            let request = DeviceGetRegionInfo {
+                header: Header {
+                    command: Command::DeviceGetRegionInfo as u16,
+                    message_size: size_of::<DeviceGetRegionInfo>() as u32,
+                    ..Default::default()
+                },
+                region_info: vfio_region_info {
+                    argsz: size_of::<vfio_region_info>() as u32,
+                    ..Default::default()
+                },
+            };
+            let stream = serve(vec![region], request.as_slice())?;
+            let mut reply = DeviceGetRegionInfo::default();
+            let (_, fd) = stream
+                .recv_with_fd(reply.as_mut_slice())
+                .map_err(Error::ReceiveWithFd)?;
+
+            Ok((reply.region_info, fd))
+        }
+
+        #[test]
+        fn mmap_fd_sent_without_capabilities() -> Result<(), Error> {
+            // Any open fd will do.
+            let (_, fd) = reply_for(VFIO_REGION_INFO_FLAG_MMAP, Some(io::stderr().as_raw_fd()))?;
+            assert!(fd.is_some());
+
+            Ok(())
+        }
+
+        #[test]
+        fn mmap_flag_without_fd_is_cleared() -> Result<(), Error> {
+            let (region_info, _) = reply_for(VFIO_REGION_INFO_FLAG_MMAP, None)?;
+            assert_eq!(region_info.flags & VFIO_REGION_INFO_FLAG_MMAP, 0);
+
+            Ok(())
+        }
+    }
+
+    mod session {
+        use super::*;
+
+        #[test]
+        fn refusal_replies_nonzero_errno() -> Result<(), Error> {
+            let header = Header {
+                command: Command::DmaRead as u16,
+                message_size: size_of::<Header>() as u32,
+                ..Default::default()
+            };
+            let mut stream = serve(Vec::new(), header.as_slice())?;
+            let mut reply = Header::default();
+            stream
+                .read_exact(reply.as_mut_slice())
+                .map_err(Error::StreamRead)?;
+            assert_ne!(reply.error, 0);
+
+            Ok(())
+        }
+
+        #[test]
+        fn truncated_message_fails() {
+            let header = Header {
+                command: Command::DeviceGetRegionInfo as u16,
+                message_size: size_of::<DeviceGetRegionInfo>() as u32,
+                ..Default::default()
+            };
+            // The header and 8 of the 32 bytes of region info after it.
+            let served = serve(Vec::new(), &[header.as_slice(), &[0; 8]].concat());
+
+            assert!(served.is_err());
         }
     }
 }

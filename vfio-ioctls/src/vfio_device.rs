@@ -1562,11 +1562,36 @@ impl VfioDevice {
     /// * `irq_index` - The type (INTX, MSI or MSI-X) of interrupts to enable.
     /// * `event_fds` - The EventFds vector that matches all the supported VFIO interrupts.
     pub fn enable_irq(&self, irq_index: u32, event_fds: Vec<&EventFd>) -> Result<()> {
+        self.set_irq_eventfds(
+            irq_index,
+            0,
+            &event_fds.into_iter().map(Some).collect::<Vec<_>>(),
+        )
+    }
+
+    /// Set eventfds for a range of VFIO interrupt vectors.
+    ///
+    /// `None` disconnects a vector's eventfd, or leaves it disconnected. Vectors
+    /// outside the range are unchanged. The first call enables the interrupt
+    /// type and allocates host IRQs through `start + event_fds.len()`. Extending
+    /// that range later requires support for dynamic MSI-X allocation (the
+    /// absence of `VFIO_IRQ_INFO_NORESIZE`).
+    ///
+    /// # Arguments
+    /// * `irq_index` - The interrupt type (INTX, MSI or MSI-X).
+    /// * `start` - The first vector to update.
+    /// * `event_fds` - An optional eventfd for each vector in the range.
+    pub fn set_irq_eventfds(
+        &self,
+        irq_index: u32,
+        start: u32,
+        event_fds: &[Option<&EventFd>],
+    ) -> Result<()> {
         let irq = self
             .irqs
             .get(&irq_index)
             .ok_or(VfioError::VfioDeviceEnableIrq)?;
-        if irq.count == 0 || (irq.count as usize) < event_fds.len() {
+        if irq.count == 0 || start > irq.count || event_fds.len() > (irq.count - start) as usize {
             return Err(VfioError::VfioDeviceEnableIrq);
         }
 
@@ -1575,7 +1600,7 @@ impl VfioDevice {
             + (event_fds.len() * mem::size_of::<u32>()) as u32;
         irq_set[0].flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
         irq_set[0].index = irq_index;
-        irq_set[0].start = 0;
+        irq_set[0].start = start;
         irq_set[0].count = event_fds.len() as u32;
 
         {
@@ -1592,7 +1617,7 @@ impl VfioDevice {
             for (index, event_fd) in event_fds.iter().enumerate() {
                 let fds_offset = index * mem::size_of::<u32>();
                 let fd = &mut fds[fds_offset..fds_offset + mem::size_of::<u32>()];
-                NativeEndian::write_u32(fd, event_fd.as_raw_fd() as u32);
+                NativeEndian::write_i32(fd, event_fd.map_or(-1, AsRawFd::as_raw_fd));
             }
         }
 
@@ -2743,6 +2768,27 @@ mod tests {
         let regions = device.get_regions().unwrap();
         // test code skips VFIO_PCI_VGA_REGION_INDEX
         assert_eq!(regions.len(), 8)
+    }
+
+    #[test]
+    fn test_irq_eventfd_ranges() {
+        let tmp_file = TempFile::new().unwrap();
+        let container = Arc::new(create_vfio_container());
+        let device = VfioDevice::new(tmp_file.as_path(), container, true).unwrap();
+        let first = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let last = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+
+        device
+            .set_irq_eventfds(2, 100, &[Some(&first), None, Some(&last)])
+            .unwrap();
+        device.set_irq_eventfds(2, 2047, &[None]).unwrap();
+
+        device.set_irq_eventfds(3, 0, &[None]).unwrap_err();
+        device.set_irq_eventfds(2, 2048, &[None]).unwrap_err();
+        device.set_irq_eventfds(2, 2047, &[None, None]).unwrap_err();
+        device.set_irq_eventfds(2, u32::MAX, &[None]).unwrap_err();
+
+        device.enable_irq(2, vec![&first, &last]).unwrap();
     }
 
     #[test]

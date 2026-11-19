@@ -153,6 +153,40 @@ impl vfio_region_info_with_cap {
         region_with_cap
     }
 }
+
+bitflags::bitflags! {
+    /// Device permissions for a DMA mapping.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct DmaMapFlags: u32 {
+        /// Allow the device to read from the mapping.
+        const READ = VFIO_DMA_MAP_FLAG_READ;
+        /// Allow the device to write to the mapping.
+        const WRITE = VFIO_DMA_MAP_FLAG_WRITE;
+    }
+}
+
+impl DmaMapFlags {
+    fn validate(self) -> Result<()> {
+        if self.is_empty() || !Self::all().contains(self) {
+            return Err(VfioError::IommuDmaMap(crate::SysError::new(libc::EINVAL)));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    fn iommufd_flags(self) -> Result<u32> {
+        self.validate()?;
+        let mut flags = iommufd_ioas_map_flags_IOMMU_IOAS_MAP_FIXED_IOVA;
+        if self.contains(Self::READ) {
+            flags |= iommufd_ioas_map_flags_IOMMU_IOAS_MAP_READABLE;
+        }
+        if self.contains(Self::WRITE) {
+            flags |= iommufd_ioas_map_flags_IOMMU_IOAS_MAP_WRITEABLE;
+        }
+        Ok(flags)
+    }
+}
+
 /// Trait to define common operations exposed to user-space drivers for
 /// VFIO device wrappers that are either backed by a legacy VfioContainer or
 /// a VFIO cdev device using iommufd.
@@ -188,6 +222,32 @@ pub trait VfioOps: Any + Send + Sync {
     /// memory may be read or written by the device at any time without synchronization.
     unsafe fn vfio_dma_map(&self, _iova: u64, _size: usize, _user_addr: *mut u8) -> Result<()> {
         unimplemented!()
+    }
+
+    /// Map a region with explicit device DMA permissions.
+    ///
+    /// Empty or unknown flags are invalid. The default implementation delegates
+    /// read/write mappings to [`Self::vfio_dma_map`] and rejects restricted mappings.
+    ///
+    /// # Safety
+    ///
+    /// The same safety requirements as [`Self::vfio_dma_map`] apply, even
+    /// when only one permission is requested.
+    unsafe fn vfio_dma_map_with_flags(
+        &self,
+        iova: u64,
+        size: usize,
+        user_addr: *mut u8,
+        flags: DmaMapFlags,
+    ) -> Result<()> {
+        flags.validate()?;
+        if flags != (DmaMapFlags::READ | DmaMapFlags::WRITE) {
+            return Err(VfioError::IommuDmaMap(crate::SysError::new(
+                libc::EOPNOTSUPP,
+            )));
+        }
+        // SAFETY: The caller must uphold the same requirements as for vfio_dma_map.
+        unsafe { self.vfio_dma_map(iova, size, user_addr) }
     }
 
     /// Unmap a region of user space memory (e.g. guest memory) from an IO
@@ -419,18 +479,45 @@ impl VfioContainer {
     /// concurrent read and write access to the memory via DMA.  Therefore, the
     /// memory may be read or written by the device at any time without synchronization.
     pub unsafe fn vfio_dma_map(&self, iova: u64, size: usize, user_addr: *mut u8) -> Result<()> {
+        let flags = DmaMapFlags::READ | DmaMapFlags::WRITE;
+        // SAFETY: The caller must uphold the same requirements as for vfio_dma_map_with_flags.
+        unsafe { self.vfio_dma_map_with_flags(iova, size, user_addr, flags) }
+    }
+
+    /// Map a region with explicit device DMA permissions. Empty or unknown flags are invalid.
+    ///
+    /// # Safety
+    ///
+    /// The same safety requirements as [`Self::vfio_dma_map`] apply, even
+    /// when only one permission is requested.
+    pub unsafe fn vfio_dma_map_with_flags(
+        &self,
+        iova: u64,
+        size: usize,
+        user_addr: *mut u8,
+        flags: DmaMapFlags,
+    ) -> Result<()> {
+        let dma_map = Self::dma_map_request(iova, size, user_addr, flags)?;
+        // SAFETY: Caller is responsible for upholding preconditions.
+        unsafe { vfio_syscall::map_dma(self, &dma_map) }
+    }
+
+    fn dma_map_request(
+        iova: u64,
+        size: usize,
+        user_addr: *mut u8,
+        flags: DmaMapFlags,
+    ) -> Result<vfio_iommu_type1_dma_map> {
+        flags.validate()?;
         const _: () = assert!(mem::size_of::<u64>() >= mem::size_of::<*mut u8>());
         const _: () = assert!(mem::size_of::<u64>() >= mem::size_of::<usize>());
-        let dma_map = vfio_iommu_type1_dma_map {
+        Ok(vfio_iommu_type1_dma_map {
             argsz: mem::size_of::<vfio_iommu_type1_dma_map>() as u32,
-            flags: VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE,
+            flags: flags.bits(),
             vaddr: (user_addr as usize).try_into().unwrap(),
             iova,
             size: size.try_into().unwrap(),
-        };
-
-        // SAFETY: Caller is responsible for upholding preconditions.
-        unsafe { vfio_syscall::map_dma(self, &dma_map) }
+        })
     }
 
     /// Unmap a region of user space memory (e.g. guest memory) from an IO
@@ -599,6 +686,17 @@ impl VfioOps for VfioContainer {
         self.vfio_dma_map(iova, size, user_addr)
     }
 
+    unsafe fn vfio_dma_map_with_flags(
+        &self,
+        iova: u64,
+        size: usize,
+        user_addr: *mut u8,
+        flags: DmaMapFlags,
+    ) -> Result<()> {
+        // SAFETY: The trait method has the same safety requirements.
+        unsafe { self.vfio_dma_map_with_flags(iova, size, user_addr, flags) }
+    }
+
     /// Unmap a region of user space memory (e.g. guest memory) from an IO
     /// address space managed by IOMMU hardware to disable DMA for
     /// associated VFIO devices
@@ -751,13 +849,29 @@ impl VfioIommufd {
     /// In particular, creating a Rust reference to this memory is instant undefined behavior
     /// due to the Rust aliasing rules.  It is also undefined behavior to call this function if
     /// a Rust reference to this memory is live.
-    #[allow(unused_unsafe)] // underlying API is unsound
     pub unsafe fn vfio_dma_map(&self, iova: u64, length: usize, user_addr: *mut u8) -> Result<()> {
+        let flags = DmaMapFlags::READ | DmaMapFlags::WRITE;
+        // SAFETY: The caller must uphold the same requirements as for vfio_dma_map_with_flags.
+        unsafe { self.vfio_dma_map_with_flags(iova, length, user_addr, flags) }
+    }
+
+    /// Map a region with explicit device DMA permissions at a fixed IOVA.
+    /// Empty or unknown flags are invalid.
+    ///
+    /// # Safety
+    ///
+    /// The same safety requirements as [`Self::vfio_dma_map`] apply, even
+    /// when only one permission is requested.
+    pub unsafe fn vfio_dma_map_with_flags(
+        &self,
+        iova: u64,
+        length: usize,
+        user_addr: *mut u8,
+        flags: DmaMapFlags,
+    ) -> Result<()> {
         let dma_map = iommu_ioas_map {
             size: mem::size_of::<iommu_ioas_map>() as u32,
-            flags: iommufd_ioas_map_flags_IOMMU_IOAS_MAP_READABLE
-                | iommufd_ioas_map_flags_IOMMU_IOAS_MAP_WRITEABLE
-                | iommufd_ioas_map_flags_IOMMU_IOAS_MAP_FIXED_IOVA,
+            flags: flags.iommufd_flags()?,
             ioas_id: self.ioas.id(),
             __reserved: 0,
             user_va: user_addr as _,
@@ -828,6 +942,17 @@ impl VfioOps for VfioIommufd {
     /// a Rust reference to this memory is live.
     unsafe fn vfio_dma_map(&self, iova: u64, size: usize, user_addr: *mut u8) -> Result<()> {
         self.vfio_dma_map(iova, size, user_addr)
+    }
+
+    unsafe fn vfio_dma_map_with_flags(
+        &self,
+        iova: u64,
+        size: usize,
+        user_addr: *mut u8,
+        flags: DmaMapFlags,
+    ) -> Result<()> {
+        // SAFETY: The trait method has the same safety requirements.
+        unsafe { self.vfio_dma_map_with_flags(iova, size, user_addr, flags) }
     }
 
     fn vfio_dma_unmap(&self, iova: u64, size: usize) -> Result<()> {
@@ -2715,6 +2840,93 @@ mod tests {
         // A fresh start is permitted once the previous session has stopped.
         device.start_dma_logging(0x1000, &ranges).unwrap();
         device.stop_dma_logging().unwrap();
+    }
+
+    #[test]
+    fn test_container_dma_map_permissions() {
+        let request =
+            |flags| VfioContainer::dma_map_request(0x1000, 0x1000, std::ptr::null_mut(), flags);
+        for (flags, expected) in [
+            (DmaMapFlags::READ, VFIO_DMA_MAP_FLAG_READ),
+            (DmaMapFlags::WRITE, VFIO_DMA_MAP_FLAG_WRITE),
+            (
+                DmaMapFlags::READ | DmaMapFlags::WRITE,
+                VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE,
+            ),
+        ] {
+            assert_eq!(request(flags).unwrap().flags, expected);
+        }
+
+        for flags in [
+            DmaMapFlags::empty(),
+            DmaMapFlags::from_bits_retain(0x8000_0003),
+        ] {
+            assert!(
+                matches!(request(flags), Err(VfioError::IommuDmaMap(e)) if e.errno() == libc::EINVAL)
+            );
+        }
+    }
+
+    #[test]
+    fn test_dma_map_permissions_for_existing_vfio_ops() {
+        #[derive(Default)]
+        struct ReadWriteOnly(std::sync::atomic::AtomicUsize);
+
+        impl VfioOps for ReadWriteOnly {
+            unsafe fn vfio_dma_map(
+                &self,
+                iova: u64,
+                size: usize,
+                _user_addr: *mut u8,
+            ) -> Result<()> {
+                assert_eq!((iova, size), (0x1000, 0x1000));
+                self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Ok(())
+            }
+        }
+
+        let backend = ReadWriteOnly::default();
+        let ops: &dyn VfioOps = &backend;
+        let mut memory = Box::new([0u8; 0x1000]);
+        let addr = memory.as_mut_ptr();
+        let read_write = DmaMapFlags::READ | DmaMapFlags::WRITE;
+        // SAFETY: The backend does not access or map memory.
+        unsafe { ops.vfio_dma_map_with_flags(0x1000, 0x1000, addr, read_write) }.unwrap();
+
+        for (flags, errno) in [
+            (DmaMapFlags::READ, libc::EOPNOTSUPP),
+            (DmaMapFlags::WRITE, libc::EOPNOTSUPP),
+            (DmaMapFlags::empty(), libc::EINVAL),
+            (DmaMapFlags::from_bits_retain(0x8000_0003), libc::EINVAL),
+        ] {
+            // SAFETY: The backend does not access or map memory.
+            let result = unsafe { ops.vfio_dma_map_with_flags(0x1000, 0x1000, addr, flags) };
+            assert!(matches!(result, Err(VfioError::IommuDmaMap(e)) if e.errno() == errno));
+        }
+        assert_eq!(backend.0.into_inner(), 1);
+    }
+
+    #[cfg(feature = "vfio_cdev")]
+    #[test]
+    fn test_iommufd_dma_map_permissions() {
+        let read = iommufd_ioas_map_flags_IOMMU_IOAS_MAP_READABLE;
+        let write = iommufd_ioas_map_flags_IOMMU_IOAS_MAP_WRITEABLE;
+        let fixed = iommufd_ioas_map_flags_IOMMU_IOAS_MAP_FIXED_IOVA;
+        for (flags, expected) in [
+            (DmaMapFlags::READ, fixed | read),
+            (DmaMapFlags::WRITE, fixed | write),
+            (DmaMapFlags::READ | DmaMapFlags::WRITE, fixed | read | write),
+        ] {
+            assert_eq!(flags.iommufd_flags().unwrap(), expected);
+        }
+        for flags in [
+            DmaMapFlags::empty(),
+            DmaMapFlags::from_bits_retain(0x8000_0003),
+        ] {
+            assert!(
+                matches!(flags.iommufd_flags(), Err(VfioError::IommuDmaMap(e)) if e.errno() == libc::EINVAL)
+            );
+        }
     }
 
     #[test]

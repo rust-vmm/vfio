@@ -4,6 +4,9 @@
 
 ## Added
 
+- `Client::dma_map_with_flags()` to specify whether a device may read,
+  write, or both when mapping a DMA region.
+
 ## Fixed
 
 # [v0.1.7]

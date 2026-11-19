@@ -4,6 +4,14 @@
 
 ## Added
 
+## Fixed
+
+# [v0.10.1]
+
+## Changed
+
+## Added
+
 - `VfioDevice::set_irq_eventfds()` to assign or disconnect eventfds for a
   range of interrupt vectors, allowing MSI-X vectors to be configured on
   demand.

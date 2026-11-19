@@ -4,6 +4,14 @@
 
 ## Added
 
+## Fixed
+
+# [v0.1.8]
+
+## Changed
+
+## Added
+
 - `Client::dma_map_with_flags()` to specify whether a device may read,
   write, or both when mapping a DMA region.
 
@@ -12,6 +20,8 @@
 - Report server rejections of DMA MAP and UNMAP requests, including
   rejections without an errno. Distinguish these from malformed or
   incomplete replies.
+- Correct inverted RESET capability parsing so devices are reported as
+  resettable only when they advertise reset support.
 
 # [v0.1.7]
 

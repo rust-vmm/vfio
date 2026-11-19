@@ -68,8 +68,8 @@ mod vfio_device;
 mod vfio_ioctls;
 
 pub use vfio_device::{
-    DmaLoggingRange, PrecopyInfo, VfioContainer, VfioDevice, VfioDeviceFd, VfioGroup, VfioIrq,
-    VfioOps, VfioRegion, VfioRegionInfoCap, VfioRegionInfoCapNvlink2Lnkspd,
+    DmaLoggingRange, DmaMapFlags, PrecopyInfo, VfioContainer, VfioDevice, VfioDeviceFd, VfioGroup,
+    VfioIrq, VfioOps, VfioRegion, VfioRegionInfoCap, VfioRegionInfoCapNvlink2Lnkspd,
     VfioRegionInfoCapNvlink2Ssatgt, VfioRegionInfoCapSparseMmap, VfioRegionInfoCapType,
     VfioRegionSparseMmapArea,
 };

@@ -22,6 +22,7 @@ mshv = ["mshv-ioctls", "mshv-bindings"]
 vfio_cdev = ["iommufd-bindings", "iommufd-ioctls", "kvm"]
 
 [dependencies]
+bitflags = "2.9.4"
 byteorder = "1.2.1"
 libc = "0.2.39"
 log = "0.4"

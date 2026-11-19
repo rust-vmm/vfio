@@ -9,6 +9,10 @@
 
 ## Fixed
 
+- Report server rejections of DMA MAP and UNMAP requests, including
+  rejections without an errno. Distinguish these from malformed or
+  incomplete replies.
+
 # [v0.1.7]
 
 ## Changed

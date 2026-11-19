@@ -75,6 +75,31 @@ impl Header {
     fn no_reply(&self) -> bool {
         self.flags & HeaderFlags::NoReply as u32 != 0
     }
+
+    fn check_dma_reply(&self, request: &Header, success_size: usize) -> Result<(), Error> {
+        let rejected = self.flags & HeaderFlags::Error as u32 != 0;
+        let expected_size = if rejected {
+            size_of::<Header>()
+        } else {
+            success_size
+        };
+        if self.flags & 0xf != HeaderFlags::Reply as u32
+            || self.message_id != request.message_id
+            || self.command != request.command
+            || self.message_size as usize != expected_size
+        {
+            return Err(Error::InvalidInput);
+        }
+        if !rejected {
+            return Ok(());
+        }
+        let errno = i32::try_from(self.error).map_err(|_| Error::InvalidInput)?;
+        Err(Error::Backend(if errno == 0 {
+            std::io::Error::other("DMA request rejected without an errno")
+        } else {
+            std::io::Error::from_raw_os_error(errno)
+        }))
+    }
 }
 
 #[repr(C)]
@@ -491,7 +516,7 @@ impl Client {
             .map_err(Error::StreamRead)?;
         debug!("Reply: {reply:?}");
 
-        Ok(())
+        reply.check_dma_reply(&dma_map.header, size_of::<Header>())
     }
 
     pub fn dma_unmap(&mut self, address: u64, size: u64) -> Result<(), Error> {
@@ -514,11 +539,27 @@ impl Client {
             .write_all(dma_unmap.as_slice())
             .map_err(Error::StreamWrite)?;
 
-        let mut reply = DmaUnmap::default();
+        let mut header = Header::default();
         self.stream
-            .read_exact(reply.as_mut_slice())
+            .read_exact(header.as_mut_slice())
+            .map_err(Error::StreamRead)?;
+        header.check_dma_reply(&dma_unmap.header, size_of::<DmaUnmap>())?;
+
+        let mut reply = DmaUnmap {
+            header,
+            ..Default::default()
+        };
+        self.stream
+            .read_exact(&mut reply.as_mut_slice()[size_of::<Header>()..])
             .map_err(Error::StreamRead)?;
         debug!("Reply: {reply:?}");
+        if reply.argsz != dma_unmap.argsz
+            || reply.flags != dma_unmap.flags
+            || reply.address != dma_unmap.address
+            || reply.size != dma_unmap.size
+        {
+            return Err(Error::InvalidInput);
+        }
 
         Ok(())
     }
@@ -1590,6 +1631,142 @@ mod tests {
             peer.read(&mut [0]).unwrap_err().kind(),
             std::io::ErrorKind::WouldBlock
         );
+    }
+
+    fn request(client: &mut Client, command: Command) -> Result<(), Error> {
+        match command {
+            Command::DmaMap => {
+                let file = File::open("/dev/null").unwrap();
+                client.dma_map(0, 0x1000, 0x2000, file.as_raw_fd())
+            }
+            Command::DmaUnmap => client.dma_unmap(0x1000, 0x2000),
+            _ => unreachable!(),
+        }
+    }
+
+    fn reply(command: Command, message_id: u16) -> DmaUnmap {
+        DmaUnmap {
+            header: Header {
+                message_id,
+                command: command as u16,
+                message_size: match command {
+                    Command::DmaMap => size_of::<Header>() as u32,
+                    Command::DmaUnmap => size_of::<DmaUnmap>() as u32,
+                    _ => unreachable!(),
+                },
+                flags: HeaderFlags::Reply as u32,
+                error: 0,
+            },
+            argsz: (size_of::<DmaUnmap>() - size_of::<Header>()) as u32,
+            flags: 0,
+            address: 0x1000,
+            size: 0x2000,
+        }
+    }
+
+    #[test]
+    fn rejections_preserve_errno_and_stream() {
+        let (mut client, mut peer) = client_pair();
+        for (command, errno) in [
+            (Command::DmaMap, libc::EEXIST),
+            (Command::DmaUnmap, libc::EINVAL),
+            (Command::DmaMap, 0),
+            (Command::DmaUnmap, 0),
+        ] {
+            let header = Header {
+                message_size: size_of::<Header>() as u32,
+                flags: HeaderFlags::Reply as u32 | HeaderFlags::Error as u32,
+                error: errno as u32,
+                ..reply(command, client.next_message_id.0).header
+            };
+            peer.write_all(header.as_slice()).unwrap();
+            match request(&mut client, command) {
+                Err(Error::Backend(error)) => {
+                    assert_eq!(error.raw_os_error(), (errno != 0).then_some(errno));
+                }
+                result => panic!("{command:?}: expected backend errno {errno}, got {result:?}"),
+            }
+        }
+        for command in [Command::DmaMap, Command::DmaUnmap, Command::DmaMap] {
+            let mut reply = reply(command, client.next_message_id.0);
+            reply.header.error = libc::EINVAL as u32;
+            peer.write_all(&reply.as_slice()[..reply.header.message_size as usize])
+                .unwrap();
+            request(&mut client, command).unwrap();
+        }
+    }
+
+    #[test]
+    fn malformed_headers_are_not_backend_rejections() {
+        for command in [Command::DmaMap, Command::DmaUnmap] {
+            let error = Header {
+                flags: HeaderFlags::Reply as u32 | HeaderFlags::Error as u32,
+                message_size: size_of::<Header>() as u32,
+                error: libc::EINVAL as u32,
+                ..reply(command, 0).header
+            };
+            for header in [
+                Header {
+                    flags: HeaderFlags::Error as u32,
+                    ..error
+                },
+                Header {
+                    flags: 3 | HeaderFlags::Error as u32,
+                    ..error
+                },
+                Header {
+                    message_id: 1,
+                    ..error
+                },
+                Header {
+                    command: Command::Version as u16,
+                    ..error
+                },
+                Header {
+                    message_size: size_of::<DmaUnmap>() as u32,
+                    ..error
+                },
+                Header {
+                    error: u32::MAX,
+                    ..error
+                },
+                Header {
+                    message_size: 0,
+                    ..reply(command, 0).header
+                },
+            ] {
+                let (mut client, mut peer) = client_pair();
+                peer.write_all(header.as_slice()).unwrap();
+                peer.shutdown(std::net::Shutdown::Write).unwrap();
+                assert!(
+                    matches!(request(&mut client, command), Err(Error::InvalidInput)),
+                    "{command:?}: {header:?}"
+                );
+            }
+        }
+        let (mut client, mut peer) = client_pair();
+        let mut reply = reply(Command::DmaUnmap, 0);
+        reply.address += 1;
+        peer.write_all(reply.as_slice()).unwrap();
+        assert!(matches!(
+            client.dma_unmap(0x1000, 0x2000),
+            Err(Error::InvalidInput)
+        ));
+    }
+
+    #[test]
+    fn incomplete_replies_are_stream_errors() {
+        for command in [Command::DmaMap, Command::DmaUnmap] {
+            let reply = reply(command, 0);
+            let (mut client, mut peer) = client_pair();
+            peer.write_all(&reply.as_slice()[..reply.header.message_size as usize - 1])
+                .unwrap();
+            peer.shutdown(std::net::Shutdown::Write).unwrap();
+            assert!(matches!(
+                request(&mut client, command),
+                Err(Error::StreamRead(error)) if error.kind() == std::io::ErrorKind::UnexpectedEof
+            ));
+        }
     }
 
     mod capability {

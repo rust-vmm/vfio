@@ -438,6 +438,7 @@ impl Client {
         Ok(())
     }
 
+    /// Map memory for device reads and writes.
     pub fn dma_map(
         &mut self,
         offset: u64,
@@ -445,6 +446,25 @@ impl Client {
         size: u64,
         fd: RawFd,
     ) -> Result<(), Error> {
+        self.dma_map_with_flags(offset, address, size, fd, DmaMapFlags::READ_WRITE)
+    }
+
+    /// Map memory with explicit device DMA permissions.
+    ///
+    /// Empty flags or bits other than [`DmaMapFlags::READ`] and
+    /// [`DmaMapFlags::WRITE`] are invalid.
+    pub fn dma_map_with_flags(
+        &mut self,
+        offset: u64,
+        address: u64,
+        size: u64,
+        fd: RawFd,
+        flags: DmaMapFlags,
+    ) -> Result<(), Error> {
+        if flags.is_empty() || !DmaMapFlags::READ_WRITE.contains(flags) {
+            return Err(Error::InvalidInput);
+        }
+
         let dma_map = DmaMap {
             header: Header {
                 message_id: self.next_message_id.0,
@@ -454,7 +474,7 @@ impl Client {
                 ..Default::default()
             },
             argsz: (size_of::<DmaMap>() - size_of::<Header>()) as u32,
-            flags: DmaMapFlags::READ_WRITE.bits(),
+            flags: flags.bits(),
             offset,
             address,
             size,
@@ -1498,6 +1518,79 @@ impl Drop for Server {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::fd::AsRawFd;
+    use std::time::Duration;
+
+    fn client_pair() -> (Client, UnixStream) {
+        let (stream, peer) = UnixStream::pair().unwrap();
+        let timeout = Some(Duration::from_secs(1));
+        for socket in [&stream, &peer] {
+            socket.set_read_timeout(timeout).unwrap();
+            socket.set_write_timeout(timeout).unwrap();
+        }
+        let client = Client {
+            stream,
+            next_message_id: Wrapping(0),
+            num_irqs: 0,
+            resettable: false,
+            regions: Vec::new(),
+        };
+        (client, peer)
+    }
+
+    #[test]
+    fn test_dma_map_wire_permissions() {
+        let (mut client, mut peer) = client_pair();
+        let file = File::open("/dev/zero").unwrap();
+        for (message_id, (flags, expected)) in [
+            (Some(DmaMapFlags::READ), 0b01),
+            (Some(DmaMapFlags::WRITE), 0b10),
+            (Some(DmaMapFlags::READ_WRITE), 0b11),
+            (None, 0b11),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let reply = Header {
+                message_id: message_id as u16,
+                command: Command::DmaMap as u16,
+                flags: HeaderFlags::Reply as u32,
+                message_size: size_of::<Header>() as u32,
+                ..Default::default()
+            };
+            peer.write_all(reply.as_slice()).unwrap();
+
+            let fd = file.as_raw_fd();
+            if let Some(flags) = flags {
+                client
+                    .dma_map_with_flags(0, 0x1000, 0x1000, fd, flags)
+                    .unwrap();
+            } else {
+                client.dma_map(0, 0x1000, 0x1000, fd).unwrap();
+            }
+
+            let mut request = DmaMap::default();
+            let (len, received_fd) = peer.recv_with_fd(request.as_mut_slice()).unwrap();
+            assert!(received_fd.is_some());
+            peer.read_exact(&mut request.as_mut_slice()[len..]).unwrap();
+            assert_eq!(request.header.command, Command::DmaMap as u16);
+            assert_eq!(request.flags, expected);
+        }
+
+        peer.shutdown(std::net::Shutdown::Write).unwrap();
+        for flags in [
+            DmaMapFlags::empty(),
+            DmaMapFlags::from_bits_retain(0x8000_0003),
+        ] {
+            let result = client.dma_map_with_flags(0, 0x1000, 0x1000, file.as_raw_fd(), flags);
+            assert!(matches!(result, Err(Error::InvalidInput)));
+        }
+        peer.set_nonblocking(true).unwrap();
+        assert_eq!(
+            peer.read(&mut [0]).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
 
     mod capability {
         use super::*;

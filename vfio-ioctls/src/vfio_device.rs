@@ -1149,6 +1149,13 @@ impl VfioDeviceInfo {
         let mut region_with_cap = vfio_region_info_with_cap::from_region_info(region_info);
         vfio_syscall::get_device_region_info_cap(self, &mut region_with_cap)?;
 
+        // The kernel may report different flags with `argsz` being big enough to hold
+        // capabilities, so copy info into the reagion one more time.
+        let info = &region_with_cap[0].region_info;
+        region.flags = info.flags;
+        region.size = info.size;
+        region.offset = info.offset;
+
         // region_with_cap[0] may contain different types of structure depending on the capability
         // type, but all of them begin with vfio_info_cap_header in order to identify the capability
         // type, version and if there's another capability after this one.
@@ -2497,7 +2504,10 @@ mod tests {
         assert_eq!(regions[0].size, 0x1000);
         assert_eq!(regions[0].caps.len(), 0);
 
-        assert_eq!(regions[1].flags, VFIO_REGION_INFO_FLAG_CAPS);
+        assert_eq!(
+            regions[1].flags,
+            VFIO_REGION_INFO_FLAG_CAPS | VFIO_REGION_INFO_FLAG_MMAP
+        );
         assert_eq!(regions[1].offset, 0x20000);
         assert_eq!(regions[1].size, 0x2000);
         assert_eq!(regions[1].caps.len(), 3);
@@ -3045,7 +3055,10 @@ mod tests {
         device.enable_msix(Vec::new()).unwrap();
         device.disable_msix().unwrap();
 
-        assert_eq!(device.get_region_flags(1), VFIO_REGION_INFO_FLAG_CAPS);
+        assert_eq!(
+            device.get_region_flags(1),
+            VFIO_REGION_INFO_FLAG_CAPS | VFIO_REGION_INFO_FLAG_MMAP
+        );
         assert_eq!(device.get_region_flags(7), 0);
         assert_eq!(device.get_region_flags(8), 0);
         assert_eq!(device.get_region_offset(1), 0x20000);

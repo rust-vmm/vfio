@@ -544,6 +544,10 @@ pub(crate) mod vfio_syscall {
         let reg_info = &mut reg_infos[0];
         match reg_info.region_info.index {
             1 => {
+                reg_info.region_info.flags =
+                    VFIO_REGION_INFO_FLAG_CAPS | VFIO_REGION_INFO_FLAG_MMAP;
+                reg_info.region_info.size = 0x2000;
+                reg_info.region_info.offset = 0x20000;
                 reg_info.region_info.cap_offset = 32;
                 // SAFETY: data structure returned by kernel is trusted.
                 let header = unsafe {

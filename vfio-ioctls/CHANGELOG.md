@@ -6,6 +6,10 @@
 
 ## Fixed
 
+- When getting region information, use the region flags, size and offset
+  returned along with the region capabilities since some drivers only expose
+  some flags if there is enough space to return a capability as well.
+
 # [v0.10.1]
 
 ## Changed
